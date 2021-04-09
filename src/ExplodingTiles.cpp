@@ -5,6 +5,8 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 
+#include "coords.hpp"
+
 std::string_view shader = R"(
 const int hex_size = 5;
 const float edge_thickness = 0.06;
@@ -64,18 +66,21 @@ int main()
 	window.setFramerateLimit(60);
 
 	sf::VertexArray t(sf::PrimitiveType::Triangles, 0);
-	const int size = 600;
+	const int size = 900;
 	const float bary_length = size / 2 * static_cast<float>(std::sqrt(3));
-	const int bottom = 500;
-	t.append(sf::Vertex(sf::Vector2f(400, bottom-bary_length), sf::Color::Red));
-	t.append(sf::Vertex(sf::Vector2f(400+size/2, bottom), sf::Color::Green));
-	t.append(sf::Vertex(sf::Vector2f(400-size/2, bottom), sf::Color::Blue));
+	const int bottom = 550;
+	const int hex_size = 5;
+	t.append(sf::Vertex(sf::Vector2f(400, bottom - bary_length), sf::Color::Red));
+	t.append(sf::Vertex(sf::Vector2f(400 + size / 2, bottom), sf::Color::Green));
+	t.append(sf::Vertex(sf::Vector2f(400 - size / 2, bottom), sf::Color::Blue));
+
+	TriCoord c{ 5,5,false };
 
 	sf::Shader s;
 	{
 		sf::MemoryInputStream stream;
 		stream.open(shader.data(), shader.size());
-		s.loadFromStream(stream,sf::Shader::Type::Fragment);
+		s.loadFromStream(stream, sf::Shader::Type::Fragment);
 	}
 	sf::RenderStates render(&s);
 
@@ -87,17 +92,27 @@ int main()
 		{
 			if (event.type == sf::Event::Closed)
 				window.close();
+			else if (event.type == sf::Event::KeyPressed) {
+				auto new_coords = neighbors(c);
+				if (event.key.code == sf::Keyboard::Num1)
+					c = new_coords[0];
+				else if (event.key.code == sf::Keyboard::Num2)
+					c = new_coords[1];
+				else if (event.key.code == sf::Keyboard::Num3)
+					c = new_coords[2];
+			}
 		}
 
 		window.clear(sf::Color::Black);
 
-	
 
-		float v1 = 1 - dot(sf::Vector2f(sf::Mouse::getPosition(window)) - t[0].position, sf::Vector2f(0,1))/bary_length;
-		float v2 = 1 - dot(sf::Vector2f(sf::Mouse::getPosition(window)) - t[1].position, t[2].position + (t[0].position - t[2].position) / 2.f - t[1].position) / (bary_length * bary_length);
 
-		s.setUniform("mouse", sf::Vector2f(v1, v2));
-		window.draw(t,render);
+
+		//float v1 = 1 - dot(sf::Vector2f(sf::Mouse::getPosition(window)) - t[0].position, sf::Vector2f(0, 1)) / bary_length;
+		//float v2 = 1 - dot(sf::Vector2f(sf::Mouse::getPosition(window)) - t[1].position, t[2].position + (t[0].position - t[2].position) / 2.f - t[1].position) / (bary_length * bary_length);
+
+		s.setUniform("mouse", to_bary<sf::Vector2f>(c)/((hex_size+1)*3.f));
+		window.draw(t, render);
 
 		window.display();
 	}

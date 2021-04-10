@@ -8,7 +8,7 @@
 
 #include "coords.hpp"
 
-std::string_view shader = R"(
+std::string_view board_shader = R"(
 const float edge_thickness = 0.06;
 const vec3 edge_color = vec3(1);
 const vec3 highlight_color = vec3(1,0,1);
@@ -33,11 +33,13 @@ void main()
 	vec3 coordinates = (gl_Color.rgb) * (hex_size+1) * 3;
 	ivec3 coords = floor(coordinates);
 	
+	ivec3 larger_selected = selected + ivec3(1);
+	
 	
 	if(all(greaterThan(coordinates,min_bound)) && all(lessThan(coordinates,max_bound))) {
 		//Inner edge
 		vec3 distance = min(fract(coordinates),ceil(coordinates)-coordinates);
-		if(selected == floor(coordinates)) {
+		if(larger_selected == floor(coordinates)) {
 			float mix = smoothstep(0,edge_thickness/2,min3(distance));
 			gl_FragColor.rgb = edge_color * (1-mix) + mix*highlight_color;
 			gl_FragColor.a = 1-smoothstep(edge_thickness/2,edge_thickness*1.5,min3(distance))*0.3;
@@ -60,30 +62,59 @@ float dot(sf::Vector2f a, sf::Vector2f b) {
 	return a.x * b.x + a.y * b.y;
 }
 
+class BoardView : public sf::Drawable {
+	sf::Vertex outer[3];
+	sf::Shader shader;
+
+	sf::Vector2f inner[3];
+
+public:
+	int size;
+	TriCoord selected{};
+
+	BoardView(sf::Vector2f center, float radius, int hex_size) : size(hex_size) {
+		float r = radius * (hex_size + 1) / hex_size; //Widen for outer edge
+		float sqrt3 = std::sqrt(3.f);
+		outer[0] = sf::Vertex({ center.x, center.y - 2 * r }, sf::Color::Red);
+		inner[0] = { center.x, center.y - 2 * radius };
+		outer[1] = sf::Vertex({ center.x + r * sqrt3, center.y + r }, sf::Color::Green);
+		inner[1] = { center.x + radius * sqrt3,center.y + radius };
+		outer[2] = sf::Vertex({ center.x - r * sqrt3, center.y + r }, sf::Color::Blue);
+		inner[2] = { center.x - radius * sqrt3,center.y + radius };
+
+		{
+			sf::MemoryInputStream stream;
+			stream.open(board_shader.data(), board_shader.size());
+			shader.loadFromStream(stream, sf::Shader::Type::Fragment);
+		}
+
+		shader.setUniform("hex_size", hex_size);
+		shader.setUniform("selected", sf::Vector3i());
+	}
+
+	void updatePos(sf::Vector2f mouse) {
+		float length = inner[1].y - inner[0].y;
+		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0,1)) / length;
+		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
+		
+		sf::Vector3i bary = sf::Vector3i(3.f * size * sf::Vector3f(v1, v2, 1-v1-v2));
+
+		selected = TriCoord(bary, size);
+		shader.setUniform("selected", bary);
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform, states.texture, &shader });
+	}
+};
+
 int main()
 {
 	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles");
 
 	window.setFramerateLimit(60);
 
-	sf::VertexArray t(sf::PrimitiveType::Triangles, 0);
-	const int size = 900;
-	const float bary_length = size / 2 * static_cast<float>(std::sqrt(3));
-	const int bottom = 550;
-	const int hex_size = 5;
-	t.append(sf::Vertex(sf::Vector2f(400, bottom - bary_length), sf::Color::Red));
-	t.append(sf::Vertex(sf::Vector2f(400 + size / 2, bottom), sf::Color::Green));
-	t.append(sf::Vertex(sf::Vector2f(400 - size / 2, bottom), sf::Color::Blue));
-
-	sf::Shader s;
-	{
-		sf::MemoryInputStream stream;
-		stream.open(shader.data(), shader.size());
-		s.loadFromStream(stream, sf::Shader::Type::Fragment);
-	}
-
-	s.setUniform("hex_size", hex_size);
-	sf::RenderStates render(&s);
+	BoardView board({ 400,300 }, 250, 5);
 
 	// run the program as long as the window is open
 	while (window.isOpen())
@@ -95,16 +126,11 @@ int main()
 				window.close();
 		}
 
+		board.updatePos(sf::Vector2f{ sf::Mouse::getPosition(window) });
+
 		window.clear(sf::Color::Black);
 
-		float v1 = 1 - dot(sf::Vector2f(sf::Mouse::getPosition(window)) - t[0].position, sf::Vector2f(0, 1)) / bary_length;
-		float v2 = 1 - dot(sf::Vector2f(sf::Mouse::getPosition(window)) - t[1].position, t[2].position + (t[0].position - t[2].position) / 2.f - t[1].position) / (bary_length * bary_length);
-		float v3 = 1 - v1 - v2;
-
-		TriCoord coord(sf::Vector3i(sf::Vector3f(v1,v2,v3)*((hex_size+1)*3.f)) - sf::Vector3i(1,1,1), hex_size);
-
-		s.setUniform("selected", coord.bary(hex_size) + sf::Vector3i(1,1,1));
-		window.draw(t, render);
+		window.draw(board);
 
 		window.display();
 	}

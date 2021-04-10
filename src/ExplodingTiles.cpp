@@ -98,6 +98,9 @@ public:
 		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
 		
 		sf::Vector3i bary = sf::Vector3i(3.f * size * sf::Vector3f(v1, v2, 1-v1-v2));
+		
+		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
+		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
 
 		selected = TriCoord(bary, size);
 		shader.setUniform("selected", bary);

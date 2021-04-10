@@ -8,7 +8,7 @@ project ("ExplodingTiles")
 find_package(SFML 2.5 COMPONENTS graphics window REQUIRED)
 
 # Add source to this project's executable.
-add_executable (ExplodingTiles "src/ExplodingTiles.cpp"  "include/coords.hpp")
+add_executable (ExplodingTiles "src/ExplodingTiles.cpp"  "include/coords.hpp" "include/board.hpp")
 
 target_include_directories(ExplodingTiles PUBLIC include)
 

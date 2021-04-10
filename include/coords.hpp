@@ -16,8 +16,11 @@ struct TriCoord {
 		return { { {x,y,!R},{x + offset,y,!R},{x,y + offset,!R} } };
 	}
 
-	sf::Vector2f tri_center() {
-		return { x + (1 + R) / 3.f, y + (1 + R) / 3.f };
+	sf::Vector3f tri_center(int hex_size) {
+		float a = (x + (1 + R) / 3.f) / (hex_size * 3);
+		float b = (y + (1 + R) / 3.f) / (hex_size * 3);
+
+		return { a, b, 1 - a - b };
 	}
 
 	sf::Vector3i bary(int hex_size) {

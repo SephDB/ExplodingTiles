@@ -71,10 +71,12 @@ class BoardView : public sf::Drawable {
 
 	const Board& b;
 
-	sf::CircleShape players[2];
 	sf::CircleShape explode;
 
+
 public:
+	sf::Transform show_player;
+	sf::CircleShape players[2];
 	TriCoord selected{};
 
 	BoardView(sf::Vector2f center, float radius, const Board& board) : b(board) {
@@ -114,6 +116,8 @@ public:
 		explode.setOutlineColor(sf::Color::Red);
 		explode.setOutlineThickness(-size / 2);
 		explode.setOrigin(size * 3, size * 3);
+
+		show_player = sf::Transform().translate(center - sf::Vector2f(radius, radius)*(7.f/8)).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
 	}
 
 	void updatePos(sf::Vector2f mouse) {
@@ -172,19 +176,53 @@ public:
 	}
 };
 
+class Game : public sf::Drawable {
+	Board b;
+	BoardView board;
+	sf::Time t;
+	int current_player = 0;
+public:
+	Game(int size) : b(size), board({ 400,300 }, 250, b), t() {}
+
+	void update(sf::Time delta) {
+		t -= delta;
+		if (b.needs_update() && t < sf::seconds(0)) {
+			t = sf::seconds(0.5f);
+			b.update_step();
+			if (!b.needs_update()) current_player = 1 - current_player;
+		}
+	}
+
+	void onMouseMove(sf::Vector2f mouse_pos) {
+		board.updatePos(mouse_pos);
+	}
+
+	void onClick() {
+		if (!b.needs_update()) {
+			b.incTile(board.selected, current_player);
+			if (b.needs_update())
+				t = sf::seconds(0.5f);
+			else
+				current_player = 1 - current_player;
+		}
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		target.draw(board, states);
+		target.draw(board.players[current_player], sf::RenderStates(board.show_player));
+	}
+};
+
 int main()
 {
 	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles");
 
 	window.setFramerateLimit(60);
 
-	Board b(5);
+	Game g(3);
 
-	BoardView board({ 400,300 }, 250, b);
+	sf::Clock c;
 
-	int current_player = 0;
-
-	// run the program as long as the window is open
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -195,19 +233,19 @@ int main()
 				window.close();
 				return 0;
 			case sf::Event::MouseButtonReleased:
-				if (b.needs_update()) {
-					b.update_step();
-				} else if (b.incTile(board.selected, current_player)) {
-					current_player = 1 - current_player; //switch between 0 and 1
-				}
+				g.onClick();
+				break;
+			case sf::Event::MouseMoved:
+				g.onMouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
+				break;
 			}
 		}
 
-		board.updatePos(sf::Vector2f{ sf::Mouse::getPosition(window) });
+		g.update(c.restart());
 
 		window.clear(sf::Color::Black);
 
-		window.draw(board);
+		window.draw(g);
 
 		window.display();
 	}

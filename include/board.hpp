@@ -7,16 +7,12 @@
 
 struct TileState {
 	int player = -1;
-	enum class State {
-		NONE,
-		ONE,
-		TWO,
-		EXPLODE
-	} state = State::NONE;
+	int num = 0;
 };
 
 class Board {
 	std::vector<TileState> _state;
+	std::vector<TriCoord> _exploding;
 	int _size;
 public:
 	Board() = default;
@@ -33,8 +29,12 @@ public:
 		return !std::all_of(neighbors.begin(), neighbors.end(), [this](auto c) {return in_bounds(c); });
 	}
 
+	int allowed_pieces(TriCoord c) const {
+		return 2 - is_edge(c);
+	}
+
 	bool needs_update() const {
-		return std::any_of(_state.begin(), _state.end(), [](auto a) {return a.state == TileState::State::EXPLODE; });
+		return !_exploding.empty();
 	}
 
 	int size() const {
@@ -54,26 +54,8 @@ public:
 		if (s.player >= 0 && s.player != player) return false;
 
 		s.player = player;
-		switch (s.state)
-		{
-		case TileState::State::NONE:
-			s.state = TileState::State::ONE;
-			break;
-		case TileState::State::ONE:
-			if (is_edge(c)) {
-				s.state = TileState::State::EXPLODE;
-			}
-			else
-			{
-				s.state = TileState::State::TWO;
-			}
-			break;
-		case TileState::State::TWO:
-			s.state = TileState::State::EXPLODE;
-			break;
-		default:
-			break;
-		}
+		s.num++;
+		if (s.num > allowed_pieces(c)) _exploding = { c };
 		return true;
 	}
 

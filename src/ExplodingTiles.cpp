@@ -129,7 +129,7 @@ public:
 		auto draw_tile = [this, &target](TriCoord c, sf::RenderStates states) {
 			if (!b.in_bounds(c)) return;
 			auto s = b[c];
-			if (s.state == TileState::State::NONE) return;
+			if (s.num == 0) return;
 
 			const sf::CircleShape& circle = players[s.player];
 			
@@ -137,14 +137,14 @@ public:
 
 			sf::Vector2f offset{};
 
-			if (s.state == TileState::State::TWO && c.R) {
+			if (s.num == 2 && c.R) {
 				offset = -circle.getOrigin() / 2.f;
 			}
 
 			states.transform.translate(x*inner[0] + y*inner[1]+z*inner[2] + offset);
 			target.draw(circle, states);
 
-			if (s.state == TileState::State::TWO) {
+			if (s.num == 2) {
 				states.transform.translate(circle.getOrigin() * 2.f / 3.f);
 				target.draw(circle, states);
 			}

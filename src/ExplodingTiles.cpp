@@ -63,6 +63,11 @@ float dot(sf::Vector2f a, sf::Vector2f b) {
 	return a.x * b.x + a.y * b.y;
 }
 
+template<typename Vec>
+Vec lerp(Vec a, Vec b, float val) {
+	return a + (b - a) * val;
+}
+
 class BoardView : public sf::Drawable {
 	sf::Vertex outer[3];
 	sf::Shader shader;
@@ -78,6 +83,7 @@ public:
 	sf::Transform show_player;
 	sf::CircleShape players[2];
 	TriCoord selected{};
+	float explosion_progress;
 
 	BoardView(sf::Vector2f center, float radius, const Board& board) : b(board) {
 		int hex_size = b.size();
@@ -143,15 +149,30 @@ public:
 			if (s.num == 0) return;
 
 			auto [x, y, z] = c.tri_center(b.size());
+
+			auto center = x * inner[0] + y * inner[1] + z * inner[2];
 			
-			states.transform.translate(x * inner[0] + y * inner[1] + z * inner[2]);
+			states.transform.translate(center);
 			
+			const sf::CircleShape& circle = players[s.player];
+
 			if (s.num > b.allowed_pieces(c)) {
-				target.draw(explode, states);
+				auto explode_state = states;
+				float scale = lerp(0.3f, 1.0f, explosion_progress);
+				explode_state.transform.scale(scale,scale);
+				target.draw(explode, explode_state);
+				for (const auto& n : c.neighbors()) {
+					if (b.in_bounds(n)) {
+						auto [x2, y2, z2] = n.tri_center(b.size());
+						auto move_target = x2 * inner[0] + y2 * inner[1] + z2 * inner[2] - center;
+						auto move_state = states;
+						move_state.transform.translate(lerp(move_target/3.f,move_target,explosion_progress));
+						target.draw(circle, move_state);
+					}
+				}
 				return;
 			}
 
-			const sf::CircleShape& circle = players[s.player];
 
 			sf::Vector2f offset{};
 
@@ -176,6 +197,8 @@ public:
 	}
 };
 
+constexpr float explosion_length = 0.5f;
+
 class Game : public sf::Drawable {
 	Board b;
 	BoardView board;
@@ -187,10 +210,11 @@ public:
 	void update(sf::Time delta) {
 		t -= delta;
 		if (b.needs_update() && t < sf::seconds(0)) {
-			t = sf::seconds(0.5f);
+			t = sf::seconds(explosion_length);
 			b.update_step();
 			if (!b.needs_update()) current_player = 1 - current_player;
 		}
+		board.explosion_progress = 1 - t.asSeconds() / explosion_length;
 	}
 
 	void onMouseMove(sf::Vector2f mouse_pos) {
@@ -199,9 +223,9 @@ public:
 
 	void onClick() {
 		if (!b.needs_update()) {
-			b.incTile(board.selected, current_player);
+			if (!b.incTile(board.selected, current_player)) return;
 			if (b.needs_update())
-				t = sf::seconds(0.5f);
+				t = sf::seconds(explosion_length);
 			else
 				current_player = 1 - current_player;
 		}

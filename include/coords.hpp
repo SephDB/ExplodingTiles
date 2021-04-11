@@ -11,19 +11,19 @@ struct TriCoord {
 	int x, y;
 	bool R;
 
-	std::array<TriCoord, 3> neighbors() {
+	std::array<TriCoord, 3> neighbors() const {
 		int offset = R ? 1 : -1;
 		return { { {x,y,!R},{x + offset,y,!R},{x,y + offset,!R} } };
 	}
 
-	sf::Vector3f tri_center(int hex_size) {
+	sf::Vector3f tri_center(int hex_size) const {
 		float a = (x + (1 + R) / 3.f) / (hex_size * 3);
 		float b = (y + (1 + R) / 3.f) / (hex_size * 3);
 
 		return { a, b, 1 - a - b };
 	}
 
-	sf::Vector3i bary(int hex_size) {
+	sf::Vector3i bary(int hex_size) const {
 		return { x, y, hex_size * 3 - 1 - x - y - R };
 	}
 };

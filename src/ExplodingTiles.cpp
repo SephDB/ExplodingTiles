@@ -1,7 +1,8 @@
-﻿// ExplodingTiles.cpp : Defines the entry point for the application.
-//
-#include <string_view>
+﻿#include <string_view>
 #include <iostream>
+#include <optional>
+#include <vector>
+#include <memory>
 #include <cmath>
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
@@ -197,24 +198,54 @@ public:
 	}
 };
 
+class Player {
+public:
+	virtual bool isMouseControlled() const { return false; }
+	//Optional to allow for multi-frame calculations
+	virtual std::optional<TriCoord> updateMove(const Board& b) {
+		return {};
+	}
+	virtual ~Player() = default;
+};
+
+class MousePlayer : public Player {
+	bool isMouseControlled() const override { return true; }
+};
+
 constexpr float explosion_length = 0.5f;
 
 class Game : public sf::Drawable {
 	Board b;
 	BoardView board;
-	sf::Time t;
+	sf::Clock t;
 	int current_player = 0;
-public:
-	Game(int size) : b(size), board({ 400,300 }, 250, b), t() {}
+	std::vector<std::unique_ptr<Player>> players;
 
-	void update(sf::Time delta) {
-		t -= delta;
-		if (b.needs_update() && t < sf::seconds(0)) {
-			t = sf::seconds(explosion_length);
-			b.update_step();
-			if (!b.needs_update()) current_player = 1 - current_player;
+	void makeMove(TriCoord c) {
+		if (!b.incTile(board.selected, current_player)) return;
+		if (b.needs_update())
+			t.restart();
+		else
+			current_player = (current_player + 1)%players.size();
+	}
+
+public:
+	Game(int size, std::vector<std::unique_ptr<Player>> players) : b(size), board({ 400,300 }, 250, b), players(std::move(players)) {}
+
+	void update() {
+		if (b.needs_update()) {
+			if (t.getElapsedTime().asSeconds() > explosion_length) {
+				t.restart();
+				b.update_step();
+				if (!b.needs_update()) current_player = (current_player + 1)%players.size();
+			}
+			board.explosion_progress = t.getElapsedTime().asSeconds() / explosion_length;
 		}
-		board.explosion_progress = 1 - t.asSeconds() / explosion_length;
+		else if (!players[current_player]->isMouseControlled()) {
+			if (auto m = players[current_player]->updateMove(b); m) {
+				makeMove(*m);
+			}
+		}
 	}
 
 	void onMouseMove(sf::Vector2f mouse_pos) {
@@ -222,12 +253,8 @@ public:
 	}
 
 	void onClick() {
-		if (!b.needs_update()) {
-			if (!b.incTile(board.selected, current_player)) return;
-			if (b.needs_update())
-				t = sf::seconds(explosion_length);
-			else
-				current_player = 1 - current_player;
+		if (!b.needs_update() && players[current_player]->isMouseControlled()) {
+			makeMove(board.selected);
 		}
 	}
 
@@ -243,9 +270,11 @@ int main()
 
 	window.setFramerateLimit(60);
 
-	Game g(3);
+	std::vector<std::unique_ptr<Player>> players;
+	players.push_back(std::make_unique<MousePlayer>());
+	players.push_back(std::make_unique<MousePlayer>());
 
-	sf::Clock c;
+	Game g(3, std::move(players));
 
 	while (window.isOpen())
 	{
@@ -265,7 +294,7 @@ int main()
 			}
 		}
 
-		g.update(c.restart());
+		g.update();
 
 		window.clear(sf::Color::Black);
 

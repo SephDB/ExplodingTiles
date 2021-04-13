@@ -203,7 +203,7 @@ class Game : public sf::Drawable {
 	std::vector<std::unique_ptr<Player>> players;
 
 	void makeMove(TriCoord c) {
-		if (!b.incTile(board.selected, current_player)) return;
+		if (!b.incTile(c, current_player)) return;
 		if (b.needsUpdate())
 			t.restart();
 		else {

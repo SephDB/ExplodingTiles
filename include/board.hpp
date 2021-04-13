@@ -23,22 +23,22 @@ public:
 	Board() = default;
 	Board(int size) : _state(size* size * 8), _size(size) {}
 
-	bool in_bounds(TriCoord c) const {
+	bool inBounds(TriCoord c) const {
 		auto b = c.bary(_size);
 		auto [min, max] = std::minmax({ b.x,b.y,b.z });
 		return min >= 0 && max < _size * 2;
 	}
 
-	bool is_edge(TriCoord c) const {
+	bool isEdge(TriCoord c) const {
 		auto neighbors = c.neighbors();
-		return !std::all_of(neighbors.begin(), neighbors.end(), [this](auto c) {return in_bounds(c); });
+		return !std::all_of(neighbors.begin(), neighbors.end(), [this](auto c) {return inBounds(c); });
 	}
 
-	int allowed_pieces(TriCoord c) const {
-		return 2 - is_edge(c);
+	int allowedPieces(TriCoord c) const {
+		return 2 - isEdge(c);
 	}
 
-	bool needs_update() const {
+	bool needsUpdate() const {
 		return !_exploding.empty();
 	}
 
@@ -51,7 +51,7 @@ public:
 	}
 
 	bool incTile(TriCoord c, int player, bool replace = false) {
-		if (!in_bounds(c))
+		if (!inBounds(c))
 			return false;
 
 		TileState& s = get(c);
@@ -60,7 +60,7 @@ public:
 
 		s.player = player;
 		s.num++;
-		if (s.num > allowed_pieces(c)) _exploding.push_back(c);
+		if (s.num > allowedPieces(c)) _exploding.push_back(c);
 		return true;
 	}
 
@@ -70,11 +70,21 @@ public:
 
 		for (auto& c : old_exploding) {
 			TileState& s = get(c);
-			if (s.num <= allowed_pieces(c)) continue;
+			if (s.num <= allowedPieces(c)) continue;
 			for (auto& n : c.neighbors()) {
 				s.num -= incTile(n, s.player, true);
 			}
 			if (s.num == 0) s.player = -1;
+		}
+	}
+
+	template<typename F>
+	void iterTiles(F f) const {
+		for (int x = 0; x < _size*2; ++x) {
+			for (int y = 0; y < _size*2; ++y) {
+				if (inBounds({ x,y,false })) f(TriCoord{ x,y,false });
+				if (inBounds({ x,y,true })) f(TriCoord{ x,y,true });
+			}
 		}
 	}
 };

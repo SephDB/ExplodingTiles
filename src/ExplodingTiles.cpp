@@ -9,6 +9,7 @@
 
 #include "coords.hpp"
 #include "board.hpp"
+#include "player.hpp"
 
 std::string_view board_shader = R"(
 const float edge_thickness = 0.04;
@@ -145,7 +146,6 @@ public:
 		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform, states.texture, &shader });
 
 		auto draw_tile = [this, &target](TriCoord c, sf::RenderStates states) {
-			if (!b.in_bounds(c)) return;
 			auto s = b[c];
 			if (s.num == 0) return;
 
@@ -157,13 +157,13 @@ public:
 			
 			const sf::CircleShape& circle = players[s.player];
 
-			if (s.num > b.allowed_pieces(c)) {
+			if (s.num > b.allowedPieces(c)) {
 				auto explode_state = states;
 				float scale = lerp(0.3f, 1.0f, explosion_progress);
 				explode_state.transform.scale(scale,scale);
 				target.draw(explode, explode_state);
 				for (const auto& n : c.neighbors()) {
-					if (b.in_bounds(n)) {
+					if (b.inBounds(n)) {
 						auto [x2, y2, z2] = n.tri_center(b.size());
 						auto move_target = x2 * inner[0] + y2 * inner[1] + z2 * inner[2] - center;
 						auto move_state = states;
@@ -189,27 +189,8 @@ public:
 			}
 		};
 
-		for (int x = 0; x < b.size() * 2; ++x) {
-			for (int y = 0; y < b.size() * 2; ++y) {
-				draw_tile({ x,y,false }, states);
-				draw_tile({ x,y,true }, states);
-			}
-		}
+		b.iterTiles([&](auto c) {draw_tile(c, states); });
 	}
-};
-
-class Player {
-public:
-	virtual bool isMouseControlled() const { return false; }
-	//Optional to allow for multi-frame calculations
-	virtual std::optional<TriCoord> updateMove(const Board& b) {
-		return {};
-	}
-	virtual ~Player() = default;
-};
-
-class MousePlayer : public Player {
-	bool isMouseControlled() const override { return true; }
 };
 
 constexpr float explosion_length = 0.5f;
@@ -223,26 +204,32 @@ class Game : public sf::Drawable {
 
 	void makeMove(TriCoord c) {
 		if (!b.incTile(board.selected, current_player)) return;
-		if (b.needs_update())
+		if (b.needsUpdate())
 			t.restart();
-		else
-			current_player = (current_player + 1)%players.size();
+		else {
+			nextPlayer();
+		}
+	}
+
+	void nextPlayer() {
+		current_player = (current_player + 1) % players.size();
+		players[current_player]->startTurn(b,current_player);
 	}
 
 public:
 	Game(int size, std::vector<std::unique_ptr<Player>> players) : b(size), board({ 400,300 }, 250, b), players(std::move(players)) {}
 
 	void update() {
-		if (b.needs_update()) {
+		if (b.needsUpdate()) {
 			if (t.getElapsedTime().asSeconds() > explosion_length) {
 				t.restart();
 				b.update_step();
-				if (!b.needs_update()) current_player = (current_player + 1)%players.size();
+				if (!b.needsUpdate()) nextPlayer();
 			}
 			board.explosion_progress = t.getElapsedTime().asSeconds() / explosion_length;
 		}
 		else if (!players[current_player]->isMouseControlled()) {
-			if (auto m = players[current_player]->updateMove(b); m) {
+			if (auto m = players[current_player]->update(); m) {
 				makeMove(*m);
 			}
 		}
@@ -253,7 +240,7 @@ public:
 	}
 
 	void onClick() {
-		if (!b.needs_update() && players[current_player]->isMouseControlled()) {
+		if (!b.needsUpdate() && players[current_player]->isMouseControlled()) {
 			makeMove(board.selected);
 		}
 	}
@@ -266,13 +253,15 @@ public:
 
 int main()
 {
+	std::random_device random;
+
 	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles");
 
 	window.setFramerateLimit(60);
 
 	std::vector<std::unique_ptr<Player>> players;
 	players.push_back(std::make_unique<MousePlayer>());
-	players.push_back(std::make_unique<MousePlayer>());
+	players.push_back(std::make_unique<RandomAI>(random));
 
 	Game g(3, std::move(players));
 

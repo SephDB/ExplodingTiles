@@ -259,9 +259,11 @@ int main()
 
 	window.setFramerateLimit(60);
 
+	using AI = FirstSuccessAI<RandomAIStrat>;
+
 	std::vector<std::unique_ptr<Player>> players;
 	players.push_back(std::make_unique<MousePlayer>());
-	players.push_back(std::make_unique<RandomAI>(random));
+	players.push_back(std::make_unique<AI>(RandomAIStrat(random)));
 
 	Game g(3, std::move(players));
 

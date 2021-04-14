@@ -10,6 +10,7 @@
 #include "coords.hpp"
 #include "board.hpp"
 #include "player.hpp"
+#include "shapes.hpp"
 
 std::string_view board_shader = R"(
 const float edge_thickness = 0.04;
@@ -245,6 +246,11 @@ public:
 		}
 	}
 
+	void reset() {
+		b = { b.size() };
+		current_player = 0;
+	}
+
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		target.draw(board, states);
 		target.draw(board.players[current_player], sf::RenderStates(board.show_player));
@@ -267,6 +273,9 @@ int main()
 
 	Game g(3, std::move(players));
 
+	sf::Color c = sf::Color::White;
+	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);
+
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -278,6 +287,7 @@ int main()
 				return 0;
 			case sf::Event::MouseButtonReleased:
 				g.onClick();
+				if (arrow.getBounds().contains(sf::Vector2f{ sf::Mouse::getPosition(window) })) g.reset();
 				break;
 			case sf::Event::MouseMoved:
 				g.onMouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
@@ -290,6 +300,7 @@ int main()
 		window.clear(sf::Color::Black);
 
 		window.draw(g);
+		window.draw(arrow);
 
 		window.display();
 	}

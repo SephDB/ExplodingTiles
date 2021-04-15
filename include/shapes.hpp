@@ -28,3 +28,13 @@ sf::VertexArray circArrow(sf::Vector2f center, sf::Color color, float inner, flo
 
 	return ret;
 }
+
+
+sf::CircleShape playerShape(int n, sf::Color color, float size = 10) {
+	auto ret = sf::CircleShape(size, n);
+	ret.setFillColor(color);
+	ret.setOrigin(size, size);
+	ret.setOutlineThickness(1.f);
+	ret.setOutlineColor(sf::Color::Black);
+	return ret;
+}

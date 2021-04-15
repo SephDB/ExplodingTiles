@@ -71,26 +71,72 @@ Vec lerp(Vec a, Vec b, float val) {
 	return a + (b - a) * val;
 }
 
-class BoardView : public sf::Drawable {
+
+class BoardWithPlayers {
+	Board board;
+	int current_player = 0;
+	std::vector<std::unique_ptr<Player>> players{};
+
+	void makeMove(TriCoord c) {
+		if (!board.incTile(c, current_player)) return;
+		if (!board.needsUpdate())
+			nextPlayer();
+	}
+
+	void nextPlayer() {
+		current_player = (current_player + 1) % players.size();
+		players[current_player]->startTurn(board, current_player);
+	}
+
+public:
+	BoardWithPlayers(int size, std::vector<std::unique_ptr<Player>> players) : board(size), players(std::move(players)) {}
+
+	const Board& getBoard() const { return board; }
+	int getCurrentPlayer() const { return current_player; }
+
+	void update() {
+		if (board.needsUpdate()) {
+			board.update_step();
+			if (!board.needsUpdate()) nextPlayer();
+		}
+		else if (!players[current_player]->isMouseControlled()) {
+			if (auto m = players[current_player]->update(); m) {
+				makeMove(*m);
+			}
+		}
+	}
+
+	void onClick(TriCoord c) {
+		if (!board.needsUpdate() && players[current_player]->isMouseControlled()) {
+			makeMove(c);
+		}
+	}
+
+	void reset() {
+		board = { board.size() };
+		current_player = 0;
+	}
+};
+
+constexpr float explosion_length = 0.5f;
+
+class VisualGame : public sf::Drawable {
 	sf::Vertex outer[3];
 	sf::Shader shader;
 
 	sf::Vector2f inner[3];
-
-	const Board& b;
+	BoardWithPlayers board;
 
 	sf::CircleShape explode;
+	sf::Clock explode_timer;
 
-
-public:
 	sf::Transform show_player;
 	sf::CircleShape players[2];
 	TriCoord selected{};
-	float explosion_progress;
+public:
 
-	BoardView(sf::Vector2f center, float radius, const Board& board) : b(board) {
-		int hex_size = b.size();
-		float r = radius * (hex_size + 1) / hex_size; //Widen for outer edge
+	VisualGame(sf::Vector2f center, float radius, int board_size, std::vector<std::unique_ptr<Player>> playerControllers) : board(board_size,std::move(playerControllers)) {
+		float r = radius * (board_size + 1) / board_size; //Widen for outer edge
 		float sqrt3 = std::sqrt(3.f);
 		outer[0] = sf::Vertex({ center.x, center.y - 2 * r }, sf::Color::Red);
 		inner[0] = { center.x, center.y - 2 * radius };
@@ -105,20 +151,13 @@ public:
 			shader.loadFromStream(stream, sf::Shader::Type::Fragment);
 		}
 
-		shader.setUniform("hex_size", hex_size);
+		shader.setUniform("hex_size", board_size);
 		shader.setUniform("selected", sf::Vector3i());
 
-		float size = radius / (hex_size * 6 + 3);
+		float size = radius / (board_size * 6 + 3);
 
-		players[0] = sf::CircleShape(size, 3);
-		players[0].setFillColor(sf::Color::Green);
-		players[0].setOrigin(size, size);
-		players[0].setOutlineThickness(1.f);
-		players[0].setOutlineColor(sf::Color::Black);
-
-		players[1] = players[0];
-		players[1].setFillColor(sf::Color::Red);
-		players[1].setPointCount(5);
+		players[0] = playerShape(3, sf::Color::Green, size);
+		players[1] = playerShape(5, sf::Color::Red, size);
 
 		explode = sf::CircleShape(size * 3);
 		explode.setFillColor(sf::Color::Yellow);
@@ -134,23 +173,40 @@ public:
 		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0, 1)) / length;
 		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
 
-		sf::Vector3i bary = sf::Vector3i(3.f * b.size() * sf::Vector3f(v1, v2, 1 - v1 - v2));
+		sf::Vector3i bary = sf::Vector3i(3.f * board.getBoard().size() * sf::Vector3f(v1, v2, 1 - v1 - v2));
 
 		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
 		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
 
-		selected = TriCoord(bary, b.size());
+		selected = TriCoord(bary, board.getBoard().size());
 		shader.setUniform("selected", bary);
+	}
+
+	void onClick() {
+		board.onClick(selected);
+	}
+
+	void reset() {
+		board.reset();
+	}
+
+	void update() {
+		if (not board.getBoard().needsUpdate() || explode_timer.getElapsedTime().asSeconds() > explosion_length) {
+			board.update();
+			explode_timer.restart();
+		}
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform, states.texture, &shader });
 
-		auto draw_tile = [this, &target](TriCoord c, sf::RenderStates states) {
-			auto s = b[c];
+		const float explosion_progress = explode_timer.getElapsedTime().asSeconds() / explosion_length;
+
+		auto draw_tile = [this, explosion_progress, &target](TriCoord c, sf::RenderStates states) {
+			auto s = board.getBoard()[c];
 			if (s.num == 0) return;
 
-			auto [x, y, z] = c.tri_center(b.size());
+			auto [x, y, z] = c.tri_center(board.getBoard().size());
 
 			auto center = x * inner[0] + y * inner[1] + z * inner[2];
 			
@@ -158,14 +214,14 @@ public:
 			
 			const sf::CircleShape& circle = players[s.player];
 
-			if (s.num > b.allowedPieces(c)) {
+			if (s.num > board.getBoard().allowedPieces(c)) {
 				auto explode_state = states;
 				float scale = lerp(0.3f, 1.0f, explosion_progress);
 				explode_state.transform.scale(scale,scale);
 				target.draw(explode, explode_state);
 				for (const auto& n : c.neighbors()) {
-					if (b.inBounds(n)) {
-						auto [x2, y2, z2] = n.tri_center(b.size());
+					if (board.getBoard().inBounds(n)) {
+						auto [x2, y2, z2] = n.tri_center(board.getBoard().size());
 						auto move_target = x2 * inner[0] + y2 * inner[1] + z2 * inner[2] - center;
 						auto move_state = states;
 						move_state.transform.translate(lerp(move_target/3.f,move_target,explosion_progress));
@@ -190,70 +246,9 @@ public:
 			}
 		};
 
-		b.iterTiles([&](auto c) {draw_tile(c, states); });
-	}
-};
+		board.getBoard().iterTiles([&](auto c) {draw_tile(c, states); });
 
-constexpr float explosion_length = 0.5f;
-
-class Game : public sf::Drawable {
-	Board b;
-	BoardView board;
-	sf::Clock t;
-	int current_player = 0;
-	std::vector<std::unique_ptr<Player>> players;
-
-	void makeMove(TriCoord c) {
-		if (!b.incTile(c, current_player)) return;
-		if (b.needsUpdate())
-			t.restart();
-		else {
-			nextPlayer();
-		}
-	}
-
-	void nextPlayer() {
-		current_player = (current_player + 1) % players.size();
-		players[current_player]->startTurn(b,current_player);
-	}
-
-public:
-	Game(int size, std::vector<std::unique_ptr<Player>> players) : b(size), board({ 400,300 }, 250, b), players(std::move(players)) {}
-
-	void update() {
-		if (b.needsUpdate()) {
-			if (t.getElapsedTime().asSeconds() > explosion_length) {
-				t.restart();
-				b.update_step();
-				if (!b.needsUpdate()) nextPlayer();
-			}
-			board.explosion_progress = t.getElapsedTime().asSeconds() / explosion_length;
-		}
-		else if (!players[current_player]->isMouseControlled()) {
-			if (auto m = players[current_player]->update(); m) {
-				makeMove(*m);
-			}
-		}
-	}
-
-	void onMouseMove(sf::Vector2f mouse_pos) {
-		board.updatePos(mouse_pos);
-	}
-
-	void onClick() {
-		if (!b.needsUpdate() && players[current_player]->isMouseControlled()) {
-			makeMove(board.selected);
-		}
-	}
-
-	void reset() {
-		b = { b.size() };
-		current_player = 0;
-	}
-
-	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-		target.draw(board, states);
-		target.draw(board.players[current_player], sf::RenderStates(board.show_player));
+		target.draw(players[board.getCurrentPlayer()], { show_player });
 	}
 };
 
@@ -271,7 +266,7 @@ int main()
 	players.push_back(std::make_unique<MousePlayer>());
 	players.push_back(std::make_unique<AI>(RandomAIStrat(random)));
 
-	Game g(3, std::move(players));
+	VisualGame game({ 400,300 }, 250, 3, std::move(players));
 
 	sf::Color c = sf::Color::White;
 	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);
@@ -286,20 +281,20 @@ int main()
 				window.close();
 				return 0;
 			case sf::Event::MouseButtonReleased:
-				g.onClick();
-				if (arrow.getBounds().contains(sf::Vector2f{ sf::Mouse::getPosition(window) })) g.reset();
+				game.onClick();
+				if (arrow.getBounds().contains(sf::Vector2f{ sf::Mouse::getPosition(window) })) game.reset();
 				break;
 			case sf::Event::MouseMoved:
-				g.onMouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
+				game.updatePos(sf::Vector2f{ sf::Mouse::getPosition(window) });
 				break;
 			}
 		}
 
-		g.update();
+		game.update();
 
 		window.clear(sf::Color::Black);
 
-		window.draw(g);
+		window.draw(game);
 		window.draw(arrow);
 
 		window.display();

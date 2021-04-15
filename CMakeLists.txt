@@ -12,7 +12,7 @@ add_executable (ExplodingTiles "src/ExplodingTiles.cpp"  "include/coords.hpp" "i
 
 target_include_directories(ExplodingTiles PUBLIC include)
 
-target_compile_features(ExplodingTiles PUBLIC cxx_std_17)
+target_compile_features(ExplodingTiles PUBLIC cxx_std_20)
 target_link_libraries(ExplodingTiles sfml-window sfml-graphics)
 
 # TODO: Add tests and install targets if needed.

@@ -89,7 +89,11 @@ class BoardWithPlayers {
 	}
 
 public:
-	BoardWithPlayers(int size, std::vector<std::unique_ptr<Player>> players) : board(size), players(std::move(players)) {}
+	BoardWithPlayers(int size) : board(size) {}
+
+	void addPlayer(std::unique_ptr<Player> player) {
+		players.push_back(std::move(player));
+	}
 
 	const Board& getBoard() const { return board; }
 	int getCurrentPlayer() const { return current_player; }
@@ -130,12 +134,12 @@ class VisualGame : public sf::Drawable {
 	sf::CircleShape explode;
 	sf::Clock explode_timer;
 
-	sf::Transform show_player;
-	sf::CircleShape players[2];
+	sf::Transform show_current_player;
+	std::vector<sf::CircleShape> players;
 	TriCoord selected{};
 public:
 
-	VisualGame(sf::Vector2f center, float radius, int board_size, std::vector<std::unique_ptr<Player>> playerControllers) : board(board_size,std::move(playerControllers)) {
+	VisualGame(sf::Vector2f center, float radius, int board_size) : board(board_size) {
 		float r = radius * (board_size + 1) / board_size; //Widen for outer edge
 		float sqrt3 = std::sqrt(3.f);
 		outer[0] = sf::Vertex({ center.x, center.y - 2 * r }, sf::Color::Red);
@@ -156,16 +160,19 @@ public:
 
 		float size = radius / (board_size * 6 + 3);
 
-		players[0] = playerShape(3, sf::Color::Green, size);
-		players[1] = playerShape(5, sf::Color::Red, size);
-
 		explode = sf::CircleShape(size * 3);
 		explode.setFillColor(sf::Color::Yellow);
 		explode.setOutlineColor(sf::Color::Red);
 		explode.setOutlineThickness(-size / 2);
 		explode.setOrigin(size * 3, size * 3);
 
-		show_player = sf::Transform().translate(center - sf::Vector2f(radius, radius)*(7.f/8)).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
+		show_current_player = sf::Transform().translate(center - sf::Vector2f(radius, radius)*(7.f/8)).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
+	}
+
+	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
+		board.addPlayer(std::move(controller));
+		float radius = (inner[1].y - inner[0].y) / 3;
+		players.push_back(playerShape(polygon_n,color,radius/(board.getBoard().size() * 6 + 3)));
 	}
 
 	void updatePos(sf::Vector2f mouse) {
@@ -231,7 +238,6 @@ public:
 				return;
 			}
 
-
 			sf::Vector2f offset{};
 
 			if (s.num == 2 && c.R) {
@@ -248,7 +254,7 @@ public:
 
 		board.getBoard().iterTiles([&](auto c) {draw_tile(c, states); });
 
-		target.draw(players[board.getCurrentPlayer()], { show_player });
+		target.draw(players[board.getCurrentPlayer()], { show_current_player });
 	}
 };
 
@@ -262,11 +268,9 @@ int main()
 
 	using AI = FirstSuccessAI<RandomAIStrat>;
 
-	std::vector<std::unique_ptr<Player>> players;
-	players.push_back(std::make_unique<MousePlayer>());
-	players.push_back(std::make_unique<AI>(RandomAIStrat(random)));
-
-	VisualGame game({ 400,300 }, 250, 3, std::move(players));
+	VisualGame game({ 400,300 }, 250, 3);
+	game.addPlayer(3, sf::Color::Green, std::make_unique<MousePlayer>());
+	game.addPlayer(5, sf::Color::Red, std::make_unique<AI>(RandomAIStrat(random)));
 
 	sf::Color c = sf::Color::White;
 	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);

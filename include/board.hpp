@@ -82,8 +82,10 @@ public:
 	void iterTiles(F f) const {
 		for (int x = 0; x < _size*2; ++x) {
 			for (int y = 0; y < _size*2; ++y) {
-				if (inBounds({ x,y,false })) f(TriCoord{ x,y,false });
-				if (inBounds({ x,y,true })) f(TriCoord{ x,y,true });
+				if (inBounds({ x,y,false }))
+					if (!f(TriCoord{ x,y,false })) return;
+				if (inBounds({ x,y,true }))
+					if (!f(TriCoord{ x,y,true })) return;
 			}
 		}
 	}

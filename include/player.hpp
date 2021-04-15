@@ -53,6 +53,7 @@ public:
 		std::vector<TriCoord> allowed_moves;
 		b.iterTiles([&](TriCoord c) {
 			if (b[c].player == player_num || b[c].num == 0) allowed_moves.push_back(c);
+			return true;
 		});
 		chosen = findFirstSuccess(b, allowed_moves, player_num, std::get<Strats>(strats)...);
 	};

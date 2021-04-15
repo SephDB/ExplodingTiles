@@ -120,6 +120,26 @@ public:
 		board = { board.size() };
 		current_player = 0;
 	}
+
+	std::optional<int> getWinner() const {
+		std::size_t total = 0;
+		int player = -1;
+		bool multiple_players = false;
+		board.iterTiles([&](TriCoord c) {
+			auto board_player = board[c].player;
+			if (board_player != -1) {
+				total += board[c].num;
+				if (player == -1) player = board_player;
+				if (player != board_player) {
+					multiple_players = true;
+					return false;
+				}
+			}
+			return true;
+		});
+		if (multiple_players || total <= players.size()) return std::nullopt;
+		return player;
+	}
 };
 
 constexpr float explosion_length = 0.5f;
@@ -135,6 +155,7 @@ class VisualGame : public sf::Drawable {
 	sf::Clock explode_timer;
 
 	sf::Transform show_current_player;
+	sf::Transform show_winner;
 	std::vector<sf::CircleShape> players;
 	TriCoord selected{};
 public:
@@ -167,6 +188,7 @@ public:
 		explode.setOrigin(size * 3, size * 3);
 
 		show_current_player = sf::Transform().translate(center - sf::Vector2f(radius, radius)*(7.f/8)).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
+		show_winner = sf::Transform().translate(center).scale(sf::Vector2f(1, 1) / size * radius);
 	}
 
 	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
@@ -198,7 +220,7 @@ public:
 	}
 
 	void update() {
-		if (not board.getBoard().needsUpdate() || explode_timer.getElapsedTime().asSeconds() > explosion_length) {
+		if (not board.getWinner() && (not board.getBoard().needsUpdate() || explode_timer.getElapsedTime().asSeconds() > explosion_length)) {
 			board.update();
 			explode_timer.restart();
 		}
@@ -252,9 +274,15 @@ public:
 			}
 		};
 
-		board.getBoard().iterTiles([&](auto c) {draw_tile(c, states); });
+		if (auto player = board.getWinner(); player) {
+			target.draw(players[*player], { show_current_player });
+			target.draw(players[*player], { show_winner });
+		}
+		else {
+			board.getBoard().iterTiles([&](auto c) {draw_tile(c, states); return true; });
+			target.draw(players[board.getCurrentPlayer()], { show_current_player });
+		}
 
-		target.draw(players[board.getCurrentPlayer()], { show_current_player });
 	}
 };
 
@@ -296,7 +324,7 @@ int main()
 
 		game.update();
 
-		window.clear(sf::Color::Black);
+		window.clear(sf::Color(0x4A4AB5FF));
 
 		window.draw(game);
 		window.draw(arrow);

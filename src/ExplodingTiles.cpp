@@ -294,11 +294,9 @@ int main()
 
 	window.setFramerateLimit(60);
 
-	using AI = FirstSuccessAI<RandomAIStrat>;
-
 	VisualGame game({ 400,300 }, 250, 3);
 	game.addPlayer(3, sf::Color::Green, std::make_unique<MousePlayer>());
-	game.addPlayer(5, sf::Color::Red, std::make_unique<AI>(RandomAIStrat(random)));
+	game.addPlayer(5, sf::Color::Red, std::make_unique<AI::AIPlayer>(AI::randomAI(random)));
 
 	sf::Color c = sf::Color::White;
 	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);

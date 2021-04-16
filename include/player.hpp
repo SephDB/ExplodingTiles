@@ -2,6 +2,10 @@
 
 #include <random>
 #include <tuple>
+#include <span>
+#include <concepts>
+#include <optional>
+#include <functional>
 #include "board.hpp"
 
 class Player {
@@ -19,43 +23,43 @@ class MousePlayer : public Player {
 	bool isMouseControlled() const override { return true; }
 };
 
+namespace AI {
 
+	using AIFunction = std::function<std::optional<TriCoord>(const Board&, std::span<TriCoord>, int)>;
 
-class AIStrat {
-public:
-	virtual std::optional<TriCoord> findMove(const Board& b, const std::vector<TriCoord>& allowed_moves, int player_num) = 0;
-};
-
-class RandomAIStrat final : public AIStrat {
-public:
-	explicit RandomAIStrat(std::random_device& e) : engine(e()) {}
-	std::optional<TriCoord> findMove(const Board& b, const std::vector<TriCoord>& allowed_moves, int player_num) override {
-		return allowed_moves[std::uniform_int_distribution(0, static_cast<int>(allowed_moves.size() - 1))(engine)];
-	}
-private:
-	std::default_random_engine engine;
-};
-
-template<typename... Strats>
-TriCoord findFirstSuccess(const Board& b, const std::vector<TriCoord>& allowed_moves, int player_num, Strats&&... strats) {
-	std::optional<TriCoord> m{};
-	((m = strats.findMove(b, allowed_moves, player_num)) || ...);
-	return *m;
-}
-
-template<typename... Strats>
-class FirstSuccessAI : public Player {
-	std::tuple<Strats...> strats;
-	TriCoord chosen{};
-public:
-	FirstSuccessAI(Strats... s) : strats(std::move(s)...) {}
-	void startTurn(const Board& b, int player_num) override {
-		std::vector<TriCoord> allowed_moves;
-		b.iterTiles([&](TriCoord c) {
-			if (b[c].player == player_num || b[c].num == 0) allowed_moves.push_back(c);
-			return true;
-		});
-		chosen = findFirstSuccess(b, allowed_moves, player_num, std::get<Strats>(strats)...);
+	class AIPlayer : public Player {
+		AIFunction f;
+		TriCoord chosen{};
+	public:
+		AIPlayer(AIFunction strat) : f(std::move(strat)) {}
+		void startTurn(const Board& b, int player_num) override {
+			std::vector<TriCoord> allowed_moves;
+			b.iterTiles([&](TriCoord c) {
+				if (b[c].player == player_num || b[c].num == 0) allowed_moves.push_back(c);
+				return true;
+			});
+			chosen = *f(b, allowed_moves, player_num);
+		}
+		std::optional<TriCoord> update() override {
+			return chosen;
+		}
 	};
-	std::optional<TriCoord> update() override { return chosen; }
-};
+
+	template<typename F>
+	concept AIFunc = std::convertible_to<F,AIFunction>;
+
+	template<AIFunc... Fs>
+	AIFunc auto firstSuccess(Fs... strats) {
+		return [=](const Board& b, std::span<TriCoord> moves, int player) {
+			std::optional<TriCoord> m{};
+			((m = strats.findMove(b, moves, player)) || ...);
+			return *m;
+		};
+	}
+
+	AIFunc auto randomAI(std::random_device& random) {
+		return [engine = std::default_random_engine(random())](const Board&, std::span<TriCoord> moves, int) mutable {
+			return moves[std::uniform_int_distribution(0, static_cast<int>(moves.size() - 1))(engine)];
+		};
+	}
+}

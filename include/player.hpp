@@ -12,6 +12,7 @@ class Player {
 public:
 	virtual bool isMouseControlled() const { return false; }
 	virtual void startTurn(const Board& b, int player_num) {}
+	virtual TriCoord selected() const { return {}; }
 	//Optional to allow for multi-frame calculations
 	virtual std::optional<TriCoord> update() {
 		return {};
@@ -40,6 +41,10 @@ namespace AI {
 			});
 			chosen = *f(b, allowed_moves, player_num);
 		}
+		TriCoord selected() const override {
+			//TODO: return 0 if haven't received result yet
+			return chosen;
+		}
 		std::optional<TriCoord> update() override {
 			return chosen;
 		}
@@ -54,6 +59,9 @@ namespace AI {
 		void startTurn(const Board& b, int player_num) override {
 			p.startTurn(b,player_num);
 			timer.restart();
+		}
+		TriCoord selected() const override {
+			return p.selected();
 		}
 		std::optional<TriCoord> update() override {
 			if (timer.getElapsedTime().asSeconds() >= interact_time) {

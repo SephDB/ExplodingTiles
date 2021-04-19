@@ -99,7 +99,9 @@ public:
 	}
 
 	const Board& getBoard() const { return board; }
-	int getCurrentPlayer() const { return current_player; }
+	int getCurrentPlayerNum() const { return current_player; }
+
+	const Player& getCurrentPlayer() const { return *players[current_player]; }
 
 	void update() {
 		if (board.needsUpdate()) {
@@ -161,7 +163,7 @@ class VisualGame : public sf::Drawable {
 	sf::Transform show_current_player;
 	sf::Transform show_winner;
 	std::vector<sf::CircleShape> players;
-	TriCoord selected{};
+	TriCoord mouse_selected{};
 public:
 
 	VisualGame(sf::Vector2f center, float radius, int board_size) : board(board_size) {
@@ -211,12 +213,11 @@ public:
 		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
 		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
 
-		selected = TriCoord(bary, board.getBoard().size());
-		shader.setUniform("selected", bary);
+		mouse_selected = TriCoord(bary, board.getBoard().size());
 	}
 
 	void onClick() {
-		board.onClick(selected);
+		board.onClick(mouse_selected);
 	}
 
 	void reset() {
@@ -227,6 +228,12 @@ public:
 		if (not board.getWinner() && (not board.getBoard().needsUpdate() || explode_timer.getElapsedTime().asSeconds() > explosion_length)) {
 			board.update();
 			explode_timer.restart();
+		}
+		if (const Player& p = board.getCurrentPlayer(); !p.isMouseControlled()) {
+			shader.setUniform("selected", p.selected().bary(board.getBoard().size()));
+		}
+		else {
+			shader.setUniform("selected", mouse_selected.bary(board.getBoard().size()));
 		}
 	}
 
@@ -284,7 +291,7 @@ public:
 		}
 		else {
 			board.getBoard().iterTiles([&](auto c) {draw_tile(c, states); return true; });
-			target.draw(players[board.getCurrentPlayer()], { show_current_player });
+			target.draw(players[board.getCurrentPlayerNum()], { show_current_player });
 		}
 
 	}
@@ -300,7 +307,7 @@ int main()
 
 	VisualGame game({ 400,300 }, 250, 3);
 	game.addPlayer(3, sf::Color::Green, std::make_unique<MousePlayer>());
-	game.addPlayer(3, sf::Color::Green, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random))));
+	game.addPlayer(5, sf::Color::Red, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random))));
 
 	sf::Color c = sf::Color::White;
 	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);

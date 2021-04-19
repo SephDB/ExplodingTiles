@@ -45,6 +45,24 @@ namespace AI {
 		}
 	};
 
+	class InteractiveAIPlayer : public Player {
+		static constexpr float interact_time = 0.3f;
+		AIPlayer p;
+		sf::Clock timer{};
+	public:
+		InteractiveAIPlayer(AIPlayer player) : p{ std::move(player) } {}
+		void startTurn(const Board& b, int player_num) override {
+			p.startTurn(b,player_num);
+			timer.restart();
+		}
+		std::optional<TriCoord> update() override {
+			if (timer.getElapsedTime().asSeconds() >= interact_time) {
+				return p.update();
+			}
+			return {};
+		}
+	};
+
 	template<typename F>
 	concept AIFunc = std::convertible_to<F,AIFunction>;
 

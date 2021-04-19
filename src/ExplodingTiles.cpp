@@ -93,6 +93,9 @@ public:
 
 	void addPlayer(std::unique_ptr<Player> player) {
 		players.push_back(std::move(player));
+		if (players.size() == 1) {
+			players[0]->startTurn(board, 0);
+		}
 	}
 
 	const Board& getBoard() const { return board; }
@@ -119,6 +122,7 @@ public:
 	void reset() {
 		board = { board.size() };
 		current_player = 0;
+		players[current_player]->startTurn(board, current_player);
 	}
 
 	std::optional<int> getWinner() const {
@@ -296,7 +300,7 @@ int main()
 
 	VisualGame game({ 400,300 }, 250, 3);
 	game.addPlayer(3, sf::Color::Green, std::make_unique<MousePlayer>());
-	game.addPlayer(5, sf::Color::Red, std::make_unique<AI::AIPlayer>(AI::randomAI(random)));
+	game.addPlayer(3, sf::Color::Green, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random))));
 
 	sf::Color c = sf::Color::White;
 	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);

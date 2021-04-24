@@ -160,6 +160,8 @@ class VisualGame : public sf::Drawable {
 	sf::CircleShape explode;
 	sf::Clock explode_timer;
 
+	sf::VertexArray reset_arrow;
+
 	sf::Transform show_current_player;
 	sf::Transform show_winner;
 	std::vector<sf::CircleShape> players;
@@ -193,8 +195,18 @@ public:
 		explode.setOutlineThickness(-size / 2);
 		explode.setOrigin(size * 3, size * 3);
 
-		show_current_player = sf::Transform().translate(center - sf::Vector2f(radius, radius)*(7.f/8)).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
+		sf::Transform rot = sf::Transform().rotate(-60);
+
+		sf::Vector2f extra_offset{ 0, radius*1.4f };
+
+		extra_offset = rot.transformPoint(extra_offset);
+
+		show_current_player = sf::Transform().translate(center - extra_offset).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
 		show_winner = sf::Transform().translate(center).scale(sf::Vector2f(1, 1) / size * radius);
+
+		extra_offset = rot.transformPoint(extra_offset);
+
+		reset_arrow = circArrow(center - extra_offset, sf::Color::White, 15, 24, 5);
 	}
 
 	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
@@ -203,7 +215,7 @@ public:
 		players.push_back(playerShape(polygon_n,color,radius/(board.getBoard().size() * 6 + 3)));
 	}
 
-	void updatePos(sf::Vector2f mouse) {
+	void mouseMove(sf::Vector2f mouse) {
 		float length = inner[1].y - inner[0].y;
 		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0, 1)) / length;
 		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
@@ -216,12 +228,9 @@ public:
 		mouse_selected = TriCoord(bary, board.getBoard().size());
 	}
 
-	void onClick() {
-		board.onClick(mouse_selected);
-	}
-
-	void reset() {
-		board.reset();
+	void onClick(sf::Vector2f mouse) {
+		if (reset_arrow.getBounds().contains(mouse)) board.reset();
+		else board.onClick(mouse_selected);
 	}
 
 	void update() {
@@ -294,6 +303,7 @@ public:
 			target.draw(players[board.getCurrentPlayerNum()], { show_current_player });
 		}
 
+		target.draw(reset_arrow, states);
 	}
 };
 
@@ -309,9 +319,6 @@ int main()
 	game.addPlayer(3, sf::Color::Green, std::make_unique<MousePlayer>());
 	game.addPlayer(5, sf::Color::Red, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random))));
 
-	sf::Color c = sf::Color::White;
-	sf::VertexArray arrow = circArrow({ 100,500 }, sf::Color::White, 15, 24, 5);
-
 	while (window.isOpen())
 	{
 		sf::Event event;
@@ -322,11 +329,10 @@ int main()
 				window.close();
 				return 0;
 			case sf::Event::MouseButtonReleased:
-				game.onClick();
-				if (arrow.getBounds().contains(sf::Vector2f{ sf::Mouse::getPosition(window) })) game.reset();
+				game.onClick(sf::Vector2f{ sf::Mouse::getPosition(window) });
 				break;
 			case sf::Event::MouseMoved:
-				game.updatePos(sf::Vector2f{ sf::Mouse::getPosition(window) });
+				game.mouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
 				break;
 			}
 		}
@@ -336,7 +342,6 @@ int main()
 		window.clear(sf::Color(0x4A4AB5FF));
 
 		window.draw(game);
-		window.draw(arrow);
 
 		window.display();
 	}

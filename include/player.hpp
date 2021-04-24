@@ -6,12 +6,26 @@
 #include <concepts>
 #include <optional>
 #include <functional>
+#include <variant>
 #include "board.hpp"
+
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...)->overloaded<Ts...>;
+
+namespace input_events {
+	struct MouseMove {
+		TriCoord position;
+	};
+	struct MouseClick {
+		TriCoord position;
+	};
+	using Event = std::variant<MouseMove, MouseClick>;
+}
 
 class Player {
 public:
-	virtual bool isMouseControlled() const { return false; }
 	virtual void startTurn(const Board& b, int player_num) {}
+	virtual void onInput(const input_events::Event& e) {}
 	virtual TriCoord selected() const { return {}; }
 	//Optional to allow for multi-frame calculations
 	virtual std::optional<TriCoord> update() {
@@ -21,7 +35,33 @@ public:
 };
 
 class MousePlayer : public Player {
-	bool isMouseControlled() const override { return true; }
+	TriCoord select{};
+	bool clicked_mouse = false;
+public:
+	void onInput(const input_events::Event& e) override {
+		std::visit(overloaded{
+			[this](input_events::MouseMove x) {
+				select = x.position;
+			},
+			[this](input_events::MouseClick x) {
+				select = x.position;
+				clicked_mouse = true;
+			},
+			[](auto) {}
+		}, e);
+	}
+
+	TriCoord selected() const override {
+		return select;
+	}
+
+	std::optional<TriCoord> update() override {
+		if (clicked_mouse) {
+			clicked_mouse = false;
+			return select;
+		}
+		return {};
+	}
 };
 
 namespace AI {

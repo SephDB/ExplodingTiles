@@ -101,6 +101,7 @@ public:
 	const Board& getBoard() const { return board; }
 	int getCurrentPlayerNum() const { return current_player; }
 
+	Player& getCurrentPlayer() { return *players[current_player]; }
 	const Player& getCurrentPlayer() const { return *players[current_player]; }
 
 	void update() {
@@ -108,16 +109,8 @@ public:
 			board.update_step();
 			if (!board.needsUpdate()) nextPlayer();
 		}
-		else if (!players[current_player]->isMouseControlled()) {
-			if (auto m = players[current_player]->update(); m) {
+		else if (auto m = players[current_player]->update(); m) {
 				makeMove(*m);
-			}
-		}
-	}
-
-	void onClick(TriCoord c) {
-		if (!board.needsUpdate() && players[current_player]->isMouseControlled()) {
-			makeMove(c);
 		}
 	}
 
@@ -165,7 +158,20 @@ class VisualGame : public sf::Drawable {
 	sf::Transform show_current_player;
 	sf::Transform show_winner;
 	std::vector<sf::CircleShape> players;
-	TriCoord mouse_selected{};
+	
+	TriCoord mouseToBoard(sf::Vector2f mouse) const {
+		float length = inner[1].y - inner[0].y;
+		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0, 1)) / length;
+		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
+
+		sf::Vector3i bary = sf::Vector3i(3.f * board.getBoard().size() * sf::Vector3f(v1, v2, 1 - v1 - v2));
+
+		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
+		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
+
+		return TriCoord(bary, board.getBoard().size());
+	}
+
 public:
 
 	VisualGame(sf::Vector2f center, float radius, int board_size) : board(board_size) {
@@ -216,21 +222,12 @@ public:
 	}
 
 	void mouseMove(sf::Vector2f mouse) {
-		float length = inner[1].y - inner[0].y;
-		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0, 1)) / length;
-		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
-
-		sf::Vector3i bary = sf::Vector3i(3.f * board.getBoard().size() * sf::Vector3f(v1, v2, 1 - v1 - v2));
-
-		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
-		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
-
-		mouse_selected = TriCoord(bary, board.getBoard().size());
+		board.getCurrentPlayer().onInput(input_events::MouseMove{ mouseToBoard(mouse) });
 	}
 
 	void onClick(sf::Vector2f mouse) {
 		if (reset_arrow.getBounds().contains(mouse)) board.reset();
-		else board.onClick(mouse_selected);
+		else board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
 	}
 
 	void update() {
@@ -238,12 +235,7 @@ public:
 			board.update();
 			explode_timer.restart();
 		}
-		if (const Player& p = board.getCurrentPlayer(); !p.isMouseControlled()) {
-			shader.setUniform("selected", p.selected().bary(board.getBoard().size()));
-		}
-		else {
-			shader.setUniform("selected", mouse_selected.bary(board.getBoard().size()));
-		}
+		shader.setUniform("selected", board.getCurrentPlayer().selected().bary(board.getBoard().size()));
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
@@ -333,6 +325,8 @@ int main()
 				break;
 			case sf::Event::MouseMoved:
 				game.mouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
+				break;
+			default:
 				break;
 			}
 		}

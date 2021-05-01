@@ -141,6 +141,51 @@ public:
 	}
 };
 
+class ScoreBar : public sf::Drawable {
+	std::vector<std::pair<sf::Color,float>> players;
+	sf::FloatRect bar;
+public:
+	ScoreBar(sf::FloatRect loc) : bar(loc) {}
+
+	void addPlayer(sf::Color c) {
+		players.emplace_back(c, 0.f);
+	}
+
+	void update(const Board& b) {
+		std::vector<int> player_counts(players.size());
+		b.iterTiles([&](TriCoord c) {
+			if (b[c].num > 0)
+				player_counts[b[c].player] += b[c].num;
+			return true; });
+		for (size_t p = 0; p < players.size(); ++p) {
+			players[p].second = lerp<float>(players[p].second, player_counts[p], 0.3f);
+		}
+	}
+
+	void reset() {
+		for (auto& p : players) p.second = 0.f;
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		sf::RectangleShape s{ {bar.width,bar.height} };
+		s.setPosition(bar.left, bar.top);
+		s.setFillColor(sf::Color::Black);
+		target.draw(s,states);
+
+		const auto total = std::accumulate(players.begin(), players.end(), 0.f, [](float acc, auto&& p) {return acc + p.second; });
+		if (total > 0) {
+			s.setSize({ 0,bar.height });
+			for (auto& [color,size] : players) {
+				float new_s = bar.width * size / total;
+				s.setPosition(s.getPosition().x + s.getSize().x, bar.top);
+				s.setSize({ new_s, bar.height });
+				s.setFillColor(color);
+				target.draw(s,states);
+			}
+		}
+	}
+};
+
 constexpr float explosion_length = 0.5f;
 
 class VisualGame : public sf::Drawable {
@@ -158,6 +203,8 @@ class VisualGame : public sf::Drawable {
 	sf::Transform show_current_player;
 	sf::Transform show_winner;
 	std::vector<sf::CircleShape> players;
+
+	ScoreBar bar;
 	
 	TriCoord mouseToBoard(sf::Vector2f mouse) const {
 		float length = inner[1].y - inner[0].y;
@@ -173,10 +220,12 @@ class VisualGame : public sf::Drawable {
 	}
 
 public:
+	VisualGame(sf::Vector2f center, float radius, int board_size) : board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }) {
+		center.y += radius * 0.2f;
+		radius *= .9f;
 
-	VisualGame(sf::Vector2f center, float radius, int board_size) : board(board_size) {
-		float r = radius * (board_size + 1) / board_size; //Widen for outer edge
-		float sqrt3 = std::sqrt(3.f);
+		const float r = radius * (board_size + 1) / board_size; //Widen for outer edge
+		const float sqrt3 = std::sqrt(3.f);
 		outer[0] = sf::Vertex({ center.x, center.y - 2 * r }, sf::Color::Red);
 		inner[0] = { center.x, center.y - 2 * radius };
 		outer[1] = sf::Vertex({ center.x + r * sqrt3, center.y + r }, sf::Color::Green);
@@ -193,7 +242,7 @@ public:
 		shader.setUniform("hex_size", board_size);
 		shader.setUniform("selected", sf::Vector3i());
 
-		float size = radius / (board_size * 6 + 3);
+		const float size = radius / (board_size * 6 + 3);
 
 		explode = sf::CircleShape(size * 3);
 		explode.setFillColor(sf::Color::Yellow);
@@ -217,6 +266,7 @@ public:
 
 	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
 		board.addPlayer(std::move(controller));
+		bar.addPlayer(color);
 		float radius = (inner[1].y - inner[0].y) / 3;
 		players.push_back(playerShape(polygon_n,color,radius/(board.getBoard().size() * 6 + 3)));
 	}
@@ -226,8 +276,10 @@ public:
 	}
 
 	void onClick(sf::Vector2f mouse) {
-		if (reset_arrow.getBounds().contains(mouse)) board.reset();
-		else board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
+		if (reset_arrow.getBounds().contains(mouse)) {
+			board.reset();
+			bar.reset();
+		} else board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
 	}
 
 	void update() {
@@ -236,6 +288,7 @@ public:
 			explode_timer.restart();
 		}
 		shader.setUniform("selected", board.getCurrentPlayer().selected().bary(board.getBoard().size()));
+		bar.update(board.getBoard());
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
@@ -296,6 +349,7 @@ public:
 		}
 
 		target.draw(reset_arrow, states);
+		target.draw(bar, states);
 	}
 };
 

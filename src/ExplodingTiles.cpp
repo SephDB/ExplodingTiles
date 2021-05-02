@@ -152,7 +152,7 @@ public:
 	}
 
 	void update(const Board& b) {
-		std::vector<int> player_counts(players.size());
+		std::vector<float> player_counts(players.size());
 		b.iterTiles([&](TriCoord c) {
 			if (b[c].num > 0)
 				player_counts[b[c].player] += b[c].num;
@@ -188,7 +188,24 @@ public:
 
 constexpr float explosion_length = 0.5f;
 
-class VisualGame : public sf::Drawable {
+namespace state_transitions {
+	struct PlayerInfo {
+		int shape_points;
+		sf::Color color;
+		std::unique_ptr<Player> playerBehavior;
+	};
+	using StartGame = std::vector<PlayerInfo>;
+	using StateChangeEvent = std::variant<std::monostate, StartGame>;
+}
+
+class State : public sf::Drawable {
+public:
+	virtual void update() = 0;
+	virtual void mouseMove(sf::Vector2f mouse) = 0;
+	virtual state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) = 0;
+};
+
+class GameState : public State {
 	sf::Vertex outer[3];
 	sf::Shader shader;
 
@@ -220,7 +237,7 @@ class VisualGame : public sf::Drawable {
 	}
 
 public:
-	VisualGame(sf::Vector2f center, float radius, int board_size) : board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }) {
+	GameState(sf::Vector2f center, float radius, int board_size) : board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }) {
 		center.y += radius * 0.2f;
 		radius *= .9f;
 
@@ -271,18 +288,19 @@ public:
 		players.push_back(playerShape(polygon_n,color,radius/(board.getBoard().size() * 6 + 3)));
 	}
 
-	void mouseMove(sf::Vector2f mouse) {
+	void mouseMove(sf::Vector2f mouse) override {
 		board.getCurrentPlayer().onInput(input_events::MouseMove{ mouseToBoard(mouse) });
 	}
 
-	void onClick(sf::Vector2f mouse) {
+	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
 		if (reset_arrow.getBounds().contains(mouse)) {
 			board.reset();
 			bar.reset();
 		} else board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
+		return {}; //no transitions yet
 	}
 
-	void update() {
+	void update() override {
 		if (not board.getWinner() && (not board.getBoard().needsUpdate() || explode_timer.getElapsedTime().asSeconds() > explosion_length)) {
 			board.update();
 			explode_timer.restart();
@@ -353,17 +371,47 @@ public:
 	}
 };
 
+std::random_device random_initializer;
+
+class MainMenu : public State {
+	sf::CircleShape play_button;
+public:
+	MainMenu(sf::Vector2f dims) : play_button(dims.x/20,3) {
+		play_button.setFillColor(sf::Color::Yellow);
+		play_button.setRotation(-30);
+		play_button.setOrigin(sf::Vector2f(dims.x / 20, dims.x / 20));
+		play_button.setPosition(dims / 2.f);
+	}
+
+	void mouseMove(sf::Vector2f mouse) override {
+	}
+
+	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
+		if (play_button.getGlobalBounds().contains(mouse)) {
+			state_transitions::StartGame start;
+			start.emplace_back(3, sf::Color::Green, std::make_unique<MousePlayer>());
+			start.emplace_back(5, sf::Color::Red, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random_initializer))));
+			return start;
+		}
+		return {};
+	}
+
+	void update() override {
+
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		target.draw(play_button);
+	}
+};
+
 int main()
 {
-	std::random_device random;
-
 	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles");
 
 	window.setFramerateLimit(60);
 
-	VisualGame game({ 400,300 }, 250, 3);
-	game.addPlayer(3, sf::Color::Green, std::make_unique<MousePlayer>());
-	game.addPlayer(5, sf::Color::Red, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random))));
+	std::unique_ptr<State> game = std::make_unique<MainMenu>(sf::Vector2f(800, 600));
 
 	while (window.isOpen())
 	{
@@ -375,21 +423,33 @@ int main()
 				window.close();
 				return 0;
 			case sf::Event::MouseButtonReleased:
-				game.onClick(sf::Vector2f{ sf::Mouse::getPosition(window) });
+			{
+				auto event = game->onClick(sf::Vector2f{ sf::Mouse::getPosition(window) });;
+				std::visit(overloaded{
+						[&](state_transitions::StartGame& g) {
+							auto play_game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,3);
+							for (auto& [num, color, behavior] : g) {
+								play_game->addPlayer(num, color, std::move(behavior));
+							}
+							game = std::move(play_game);
+						},
+						[](auto) {}
+					}, event);
+			}
 				break;
 			case sf::Event::MouseMoved:
-				game.mouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
+				game->mouseMove(sf::Vector2f{ sf::Mouse::getPosition(window) });
 				break;
 			default:
 				break;
 			}
 		}
 
-		game.update();
+		game->update();
 
 		window.clear(sf::Color(0x4A4AB5FF));
 
-		window.draw(game);
+		window.draw(*game);
 
 		window.display();
 	}

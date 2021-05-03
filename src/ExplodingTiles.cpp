@@ -192,7 +192,7 @@ namespace state_transitions {
 	struct PlayerInfo {
 		int shape_points;
 		sf::Color color;
-		std::unique_ptr<Player> playerBehavior;
+		PlayerType playerBehavior;
 	};
 	using StartGame = std::vector<PlayerInfo>;
 	using StateChangeEvent = std::variant<std::monostate, StartGame>;
@@ -236,8 +236,17 @@ class GameState : public State {
 		return TriCoord(bary, board.getBoard().size());
 	}
 
+	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
+		board.addPlayer(std::move(controller));
+		bar.addPlayer(color);
+		float radius = (inner[1].y - inner[0].y) / 3;
+		players.push_back(playerShape(polygon_n, color, radius / (board.getBoard().size() * 6 + 3)));
+	}
+
 public:
-	GameState(sf::Vector2f center, float radius, int board_size) : board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }) {
+	GameState(sf::Vector2f center, float radius, int board_size, const state_transitions::StartGame& game_info) 
+		: board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }) {
+		
 		center.y += radius * 0.2f;
 		radius *= .9f;
 
@@ -279,13 +288,10 @@ public:
 		extra_offset = rot.transformPoint(extra_offset);
 
 		reset_arrow = circArrow(center - extra_offset, sf::Color::White, 15, 24, 5);
-	}
 
-	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
-		board.addPlayer(std::move(controller));
-		bar.addPlayer(color);
-		float radius = (inner[1].y - inner[0].y) / 3;
-		players.push_back(playerShape(polygon_n,color,radius/(board.getBoard().size() * 6 + 3)));
+		for (auto& [num, color, behavior] : game_info) {
+			addPlayer(num, color, toPlayer(behavior));
+		}
 	}
 
 	void mouseMove(sf::Vector2f mouse) override {
@@ -371,8 +377,6 @@ public:
 	}
 };
 
-std::random_device random_initializer;
-
 class MainMenu : public State {
 	sf::CircleShape play_button;
 public:
@@ -388,10 +392,10 @@ public:
 
 	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
 		if (play_button.getGlobalBounds().contains(mouse)) {
-			state_transitions::StartGame start;
-			start.emplace_back(3, sf::Color::Green, std::make_unique<MousePlayer>());
-			start.emplace_back(5, sf::Color::Red, std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random_initializer))));
-			return start;
+			return state_transitions::StartGame{
+				{ 3, sf::Color::Green, PlayerType::Mouse },
+				{ 5, sf::Color::Red, PlayerType::AIRando }
+			};
 		}
 		return {};
 	}
@@ -427,11 +431,7 @@ int main()
 				auto event = game->onClick(sf::Vector2f{ sf::Mouse::getPosition(window) });;
 				std::visit(overloaded{
 						[&](state_transitions::StartGame& g) {
-							auto play_game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,3);
-							for (auto& [num, color, behavior] : g) {
-								play_game->addPlayer(num, color, std::move(behavior));
-							}
-							game = std::move(play_game);
+							game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,3,g);
 						},
 						[](auto) {}
 					}, event);

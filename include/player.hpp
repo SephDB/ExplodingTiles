@@ -129,3 +129,22 @@ namespace AI {
 		};
 	}
 }
+
+enum class PlayerType {
+	Mouse,
+	AIRando
+};
+
+std::unique_ptr<Player> toPlayer(PlayerType t) {
+	thread_local std::random_device random_initializer;
+	switch (t)
+	{
+	case PlayerType::Mouse:
+		return std::make_unique<MousePlayer>();
+		break;
+	case PlayerType::AIRando:
+		return std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random_initializer)));
+		break;
+	}
+	return nullptr;
+}

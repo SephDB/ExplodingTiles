@@ -13,7 +13,7 @@
       "variables": [],
       "enableClangTidyCodeAnalysis": true,
       "enableMicrosoftCodeAnalysis": true,
-      "addressSanitizerEnabled": true
+      "addressSanitizerEnabled": false
     }
   ]
 }

@@ -195,7 +195,8 @@ namespace state_transitions {
 		PlayerType playerBehavior;
 	};
 	using StartGame = std::vector<PlayerInfo>;
-	using StateChangeEvent = std::variant<std::monostate, StartGame>;
+	struct ReturnToMain {};
+	using StateChangeEvent = std::variant<std::monostate, StartGame, ReturnToMain>;
 }
 
 class State : public sf::Drawable {
@@ -222,6 +223,7 @@ class GameState : public State {
 	std::vector<sf::CircleShape> players;
 
 	ScoreBar bar;
+	CrossShape exit;
 	
 	TriCoord mouseToBoard(sf::Vector2f mouse) const {
 		float length = inner[1].y - inner[0].y;
@@ -245,8 +247,11 @@ class GameState : public State {
 
 public:
 	GameState(sf::Vector2f center, float radius, int board_size, const state_transitions::StartGame& game_info) 
-		: board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }) {
+		: board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }), exit(sf::Color::Red,40) {
 		
+		exit.setPosition(60, 60);
+		exit.setRotation(45);
+
 		center.y += radius * 0.2f;
 		radius *= .9f;
 
@@ -295,6 +300,12 @@ public:
 	}
 
 	void mouseMove(sf::Vector2f mouse) override {
+		if (exit.getBounds().contains(mouse)) {
+			exit.setColor(sf::Color::Yellow);
+		}
+		else {
+			exit.setColor(sf::Color::Red);
+		}
 		board.getCurrentPlayer().onInput(input_events::MouseMove{ mouseToBoard(mouse) });
 	}
 
@@ -302,7 +313,13 @@ public:
 		if (reset_arrow.getBounds().contains(mouse)) {
 			board.reset();
 			bar.reset();
-		} else board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
+		}
+		else if (exit.getBounds().contains(mouse)) {
+			return state_transitions::ReturnToMain{};
+		}
+		else {
+			board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
+		}
 		return {}; //no transitions yet
 	}
 
@@ -374,6 +391,7 @@ public:
 
 		target.draw(reset_arrow, states);
 		target.draw(bar, states);
+		target.draw(exit, states);
 	}
 };
 
@@ -432,6 +450,9 @@ int main()
 				std::visit(overloaded{
 						[&](state_transitions::StartGame& g) {
 							game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,3,g);
+						},
+						[&](state_transitions::ReturnToMain) {
+							game = std::make_unique<MainMenu>(sf::Vector2f(800,600));
 						},
 						[](auto) {}
 					}, event);

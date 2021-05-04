@@ -38,3 +38,30 @@ sf::CircleShape playerShape(int n, sf::Color color, float size = 10) {
 	ret.setOutlineColor(sf::Color::Black);
 	return ret;
 }
+
+class CrossShape : public sf::Drawable, public sf::Transformable {
+	sf::RectangleShape line;
+public:
+	CrossShape(sf::Color c, float size) : line(sf::Vector2f(size, size / 5)) {
+		line.setOrigin(line.getSize()/2.f);
+		line.setFillColor(c);
+	}
+
+	sf::FloatRect getBounds() const {
+		auto d = line;
+		d.setSize({ line.getSize().x, line.getSize().x });
+		d.setOrigin(line.getSize().x / 2, line.getSize().x / 2);
+		return getTransform().transformRect(d.getGlobalBounds());
+	}
+
+	void setColor(sf::Color c) {
+		line.setFillColor(c);
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform.combine(getTransform());
+		target.draw(line, states);
+		states.transform.rotate(90);
+		target.draw(line, states);
+	}
+};

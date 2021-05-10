@@ -196,7 +196,8 @@ namespace state_transitions {
 	};
 	using StartGame = std::vector<PlayerInfo>;
 	struct ReturnToMain {};
-	using StateChangeEvent = std::variant<std::monostate, StartGame, ReturnToMain>;
+	struct OpenPlayerSelect {};
+	using StateChangeEvent = std::variant<std::monostate, OpenPlayerSelect, StartGame, ReturnToMain>;
 }
 
 class State : public sf::Drawable {
@@ -410,10 +411,7 @@ public:
 
 	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
 		if (play_button.getGlobalBounds().contains(mouse)) {
-			return state_transitions::StartGame{
-				{ 3, sf::Color::Green, PlayerType::Mouse },
-				{ 5, sf::Color::Red, PlayerType::AIRando }
-			};
+			return state_transitions::OpenPlayerSelect{};
 		}
 		return {};
 	}
@@ -425,6 +423,75 @@ public:
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		target.draw(play_button);
 	}
+};
+
+class PlayerSelector : public sf::Transformable, public sf::Drawable {
+	sf::RectangleShape outline;
+public:
+	explicit PlayerSelector(sf::Vector2f size) : outline(size) {
+		outline.setFillColor(sf::Color::Cyan);
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform.combine(getTransform());
+		target.draw(outline, states);
+	}
+};
+
+class PlayerSelect : public State {
+	CrossShape add_player;
+	sf::CircleShape play_button;
+	std::vector<PlayerSelector> players;
+	sf::Vector2f dims;
+	
+	void updateLayout() {
+		float width = dims.x / 5 * players.size();
+		float left = dims.x / 2 - width / 2;
+		for (auto& p : players) {
+			p.setPosition({ left,dims.y / 2 - dims.x / 10 });
+			left += dims.x / 5;
+		}
+		add_player.setPosition({ left,dims.y / 2 });
+	}
+public:
+	PlayerSelect(sf::Vector2f dims) : add_player(sf::Color::Green,dims.x/20), play_button(dims.x / 20, 3), dims(dims) {
+		play_button.setFillColor(sf::Color::Yellow);
+		play_button.setRotation(-30);
+		play_button.setOrigin(sf::Vector2f(dims.x / 20, dims.x / 20));
+		play_button.setPosition(dims / 2.f + sf::Vector2f(0,dims.y/4));
+
+		players.push_back(PlayerSelector{ {dims.x / 10,dims.x / 5} });
+		updateLayout();
+	}
+
+	void mouseMove(sf::Vector2f mouse) override {
+	}
+
+	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
+		if (play_button.getGlobalBounds().contains(mouse)) {
+			return state_transitions::StartGame{
+				{ 3, sf::Color::Green, PlayerType::Mouse },
+				{ 5, sf::Color::Red, PlayerType::AIRando }
+			};
+		} else if (add_player.getBounds().contains(mouse)) {
+			players.push_back(PlayerSelector{ {dims.x / 10,dims.x / 5} });
+			updateLayout();
+		}
+		return {};
+	}
+
+	void update() override {
+
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		target.draw(add_player,states);
+		target.draw(play_button,states);
+		for (auto& p : players) {
+			target.draw(p,states);
+		}
+	}
+
 };
 
 int main()
@@ -448,6 +515,9 @@ int main()
 			{
 				auto event = game->onClick(sf::Vector2f{ sf::Mouse::getPosition(window) });;
 				std::visit(overloaded{
+						[&](state_transitions::OpenPlayerSelect) {
+							game = std::make_unique<PlayerSelect>(sf::Vector2f(800,600));
+						},
 						[&](state_transitions::StartGame& g) {
 							game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,3,g);
 						},

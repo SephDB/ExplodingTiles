@@ -59,9 +59,55 @@ public:
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-		states.transform.combine(getTransform());
+		states.transform *= getTransform();
 		target.draw(line, states);
 		states.transform.rotate(90);
 		target.draw(line, states);
+	}
+};
+
+class HumanPlayer : public sf::Drawable, public sf::Transformable {
+	sf::RectangleShape body;
+	sf::CircleShape head;
+	float size;
+public:
+	HumanPlayer(float size) : body(sf::Vector2f(size * 0.4f, size * 0.7f)), head(size * 0.12f), size(size) {
+		body.setPosition(sf::Vector2f(size/2-body.getSize().x/2,size - body.getSize().y));
+		body.setFillColor(sf::Color(128, 128, 128));
+		head.setPosition(size/2-head.getRadius(),0);
+		head.setFillColor(body.getFillColor());
+	}
+
+	sf::FloatRect getBounds() const {
+		return getTransform().transformRect(sf::FloatRect(body.getPosition().x,0,body.getSize().x,size));
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		target.draw(head, states);
+		target.draw(body, states);
+	}
+};
+
+class AIPlayerShape : public sf::Drawable, public sf::Transformable {
+	sf::RectangleShape body;
+	sf::RectangleShape stand;
+public:
+	AIPlayerShape(float size) : body(sf::Vector2f(size, size*0.7f)), stand(sf::Vector2f(size,size*0.1f)) {
+		body.setFillColor(sf::Color::Black);
+		body.setOutlineColor(sf::Color::White);
+		body.setOutlineThickness(-size * 0.15f);
+		stand.setPosition(0,size*0.9f);
+		stand.setFillColor(sf::Color::White);
+	}
+
+	sf::FloatRect getBounds() const {
+		return getTransform().transformRect(sf::FloatRect(body.getPosition().x, 0, body.getSize().x, stand.getPosition().y/0.9f));
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		target.draw(stand, states);
+		target.draw(body, states);
 	}
 };

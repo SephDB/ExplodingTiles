@@ -427,14 +427,59 @@ public:
 
 class PlayerSelector : public sf::Transformable, public sf::Drawable {
 	sf::RectangleShape outline;
+	HumanPlayer human_shape;
+	AIPlayerShape AI_shape;
+	sf::CircleShape player_shape;
+	state_transitions::PlayerInfo player;
+	sf::RectangleShape selector;
+
+	void refresh() {
+		player_shape = playerShape(player.shape_points, player.color, outline.getSize().x / 4);
+		player_shape.setPosition(outline.getSize().x / 2, player_shape.getRadius() + outline.getSize().y / 10);
+		
+		sf::FloatRect selector_pos = (player.playerBehavior == PlayerType::Mouse) ? human_shape.getBounds() : AI_shape.getBounds();
+		selector.setPosition(selector_pos.left - selector_pos.width*0.1f,selector_pos.top - selector_pos.height * 0.1f);
+		selector.setSize(sf::Vector2f(selector_pos.width*1.2f, selector_pos.height*1.2f));
+	}
+
 public:
-	explicit PlayerSelector(sf::Vector2f size) : outline(size) {
-		outline.setFillColor(sf::Color::Cyan);
+	PlayerSelector(sf::Vector2f size, state_transitions::PlayerInfo info) : outline(size), human_shape(size.x / 3), AI_shape(size.x / 3), player(info) {
+		outline.setOutlineColor(sf::Color::Cyan);
+		outline.setFillColor(sf::Color::Transparent);
+		outline.setOutlineThickness(2.f);
+		human_shape.setPosition(0, size.y/2);
+		AI_shape.setPosition(human_shape.getPosition() + sf::Vector2f(size.x / 2, 0));
+		selector.setFillColor(sf::Color::Magenta);
+		refresh();
+	}
+
+	void onMouseClick(sf::Vector2f mouse) {
+		mouse = getInverseTransform().transformPoint(mouse);
+		if (human_shape.getBounds().contains(mouse)) {
+			player.playerBehavior = PlayerType::Mouse;
+			refresh();
+		}
+		else if (AI_shape.getBounds().contains(mouse)) {
+			player.playerBehavior = PlayerType::AIRando;
+			refresh();
+		}
+	}
+
+	operator state_transitions::PlayerInfo() const {
+		return player;
+	}
+
+	sf::FloatRect getBounds() const {
+		return getTransform().transformRect(outline.getGlobalBounds());
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		states.transform.combine(getTransform());
 		target.draw(outline, states);
+		target.draw(selector, states);
+		target.draw(human_shape, states);
+		target.draw(AI_shape, states);
+		target.draw(player_shape,states);
 	}
 };
 
@@ -448,7 +493,7 @@ class PlayerSelect : public State {
 		float width = dims.x / 5 * players.size();
 		float left = dims.x / 2 - width / 2;
 		for (auto& p : players) {
-			p.setPosition({ left,dims.y / 2 - dims.x / 10 });
+			p.setPosition({ left,dims.y / 2 - dims.x / 8 });
 			left += dims.x / 5;
 		}
 		add_player.setPosition({ left,dims.y / 2 });
@@ -460,7 +505,7 @@ public:
 		play_button.setOrigin(sf::Vector2f(dims.x / 20, dims.x / 20));
 		play_button.setPosition(dims / 2.f + sf::Vector2f(0,dims.y/4));
 
-		players.push_back(PlayerSelector{ {dims.x / 10,dims.x / 5} });
+		players.push_back(PlayerSelector{ {dims.x / 6,dims.x / 4} , {3, sf::Color::Green, PlayerType::Mouse} });
 		updateLayout();
 	}
 
@@ -469,13 +514,19 @@ public:
 
 	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
 		if (play_button.getGlobalBounds().contains(mouse)) {
-			return state_transitions::StartGame{
-				{ 3, sf::Color::Green, PlayerType::Mouse },
-				{ 5, sf::Color::Red, PlayerType::AIRando }
-			};
+			state_transitions::StartGame ret;
+			std::copy(players.begin(), players.end(), std::back_inserter(ret));
+			return ret;
 		} else if (add_player.getBounds().contains(mouse)) {
-			players.push_back(PlayerSelector{ {dims.x / 10,dims.x / 5} });
+			players.push_back(PlayerSelector{ {dims.x / 6,dims.x / 4}, { 5, sf::Color::Red, PlayerType::AIRando } });
 			updateLayout();
+		} else {
+			for (auto& p : players) {
+				if (p.getBounds().contains(mouse)) {
+					p.onMouseClick(mouse);
+					break;
+				}
+			}
 		}
 		return {};
 	}

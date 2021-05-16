@@ -425,43 +425,140 @@ public:
 	}
 };
 
-class ShapeSelector : public sf::Transformable, public sf::Drawable {
-	std::vector<sf::CircleShape> shapes;
+template<class ShapeType>
+class RectSelector : public sf::Drawable {
+	std::vector<ShapeType> shapes;
+	size_t selected = 0;
 	sf::FloatRect bounds;
+
+	void select(sf::Shape& s) {
+		s.setOutlineColor(sf::Color::White);
+		s.setOutlineThickness(2);
+	}
+
+	void deselect(sf::Shape& s) {
+		s.setOutlineColor(sf::Color::Black);
+		s.setOutlineThickness(1);
+	}
+
 public:
-	ShapeSelector(float width) {
-		const float padding = 10;
-		const int total = 4;
-		const float individual_width = (width - padding * (total + 1)) / total;
+	RectSelector() = default;
+
+	constexpr static int padding = 10;
+	static float shape_width(int total, float width) {
+		return (width - padding * (total + 1)) / total;
+	}
+
+
+	RectSelector(std::vector<ShapeType>&& s, float width, size_t selected) : shapes(std::move(s)), selected(selected) {
+		const float individual_width = shape_width(shapes.size(), width);
 
 		bounds = sf::FloatRect(0, 0, width, individual_width);
 
-		for (int i = 3; i <= 6; ++i) {
-			shapes.push_back(playerShape(i, sf::Color::Transparent, individual_width/2));
-			shapes.back().setPosition(padding + (individual_width + padding) * (i - 3) + individual_width / 2, individual_width/2);
-			shapes.back().setOutlineThickness(2);
+		size_t i = 0;
+		for (sf::Shape& shape : shapes) {
+			shape.setPosition(padding + (individual_width + padding) * i + shape.getOrigin().x, shape.getOrigin().y);
+			if (i == selected) {
+				select(shape);
+			}
+			else {
+				deselect(shape);
+			}
+			++i;
 		}
 	}
 
+	ShapeType* onClick(sf::Vector2f mouse) {
+		for (auto& s : shapes) {
+			if (s.getGlobalBounds().contains(mouse)) {
+				deselect(shapes[selected]);
+				selected = &s - &shapes.front();
+				select(s);
+				return &s;
+			}
+		}
+		return nullptr;
+	}
+
 	sf::FloatRect getBounds() const {
-		return getTransform().transformRect(bounds);
+		return bounds;
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		for (auto& s : shapes) {
+			target.draw(s, states);
+		}
+	}
+};
+
+class ShapeSelector : public sf::Transformable, public sf::Drawable {
+	RectSelector<sf::CircleShape> selector;
+
+public:
+	ShapeSelector(float width, int current_num) {
+		std::vector<sf::CircleShape> shapes;
+		const float individual_width = selector.shape_width(4, width);
+		for (int i = 3; i <= 6; ++i) {
+			shapes.push_back(playerShape(i, sf::Color::Transparent, individual_width / 2));
+		}
+		selector = { std::move(shapes), width, static_cast<size_t>(current_num - 3)};
+	}
+
+	sf::FloatRect getBounds() const {
+		return getTransform().transformRect(selector.getBounds());
 	}
 
 	//returns number of shape clicked on, -1 otherwise
-	int onClick(sf::Vector2f mouse) const {
+	int onClick(sf::Vector2f mouse) {
 		mouse = getInverseTransform().transformPoint(mouse);
-		for (auto& s : shapes) {
-			if (s.getGlobalBounds().contains(mouse))
-				return s.getPointCount();
+		if (auto* s = selector.onClick(mouse); s) {
+			return s->getPointCount();
 		}
 		return -1;
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		states.transform *= getTransform();
-		for (auto& s : shapes) {
-			target.draw(s, states);
+		target.draw(selector, states);
+	}
+};
+
+constexpr std::array<uint32_t,4> colors{ 0xA41A1CFF, 0xDEDE00FF, 0xFF7F00FF, 0xA65628FF};
+
+class ColorSelector : public sf::Transformable, public sf::Drawable {
+	RectSelector<sf::RectangleShape> selector;
+
+public:
+	ColorSelector(float width, sf::Color initial) {
+		const float individual_width = selector.shape_width(colors.size(),width);
+
+		std::vector<sf::RectangleShape> shapes;
+
+		for (auto c : colors) {
+			shapes.push_back(sf::RectangleShape(sf::Vector2f(individual_width,individual_width)));
+			shapes.back().setFillColor(sf::Color(c));
 		}
+
+		size_t selected = std::ranges::find(colors, initial.toInteger()) - colors.begin();
+		selector = { std::move(shapes), width, selected};
+	}
+
+	sf::FloatRect getBounds() const {
+		return getTransform().transformRect(selector.getBounds());
+	}
+
+	//returns number of shape clicked on, -1 otherwise
+	std::optional<sf::Color> onClick(sf::Vector2f mouse) {
+		mouse = getInverseTransform().transformPoint(mouse);
+		if (auto* s = selector.onClick(mouse); s) {
+			return s->getFillColor();
+		}
+		return {};
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		target.draw(selector, states);
 	}
 };
 
@@ -471,6 +568,7 @@ class PlayerSelector : public sf::Transformable, public sf::Drawable {
 	AIPlayerShape AI_shape;
 	sf::CircleShape player_shape;
 	ShapeSelector shape_selector;
+	ColorSelector color_selector;
 	state_transitions::PlayerInfo player;
 	sf::RectangleShape selector;
 
@@ -479,6 +577,8 @@ class PlayerSelector : public sf::Transformable, public sf::Drawable {
 		player_shape.setPosition(outline.getSize().x / 2, player_shape.getRadius() + outline.getSize().y / 10);
 
 		shape_selector.setPosition(0, player_shape.getPosition().y + player_shape.getRadius() + 20);
+		auto shape_pos = shape_selector.getBounds();
+		color_selector.setPosition(0, shape_pos.top + shape_pos.height + 20);
 		
 		sf::FloatRect selector_pos = (player.playerBehavior == PlayerType::Mouse) ? human_shape.getBounds() : AI_shape.getBounds();
 		selector.setPosition(selector_pos.left - selector_pos.width*0.1f,selector_pos.top - selector_pos.height * 0.1f);
@@ -486,7 +586,7 @@ class PlayerSelector : public sf::Transformable, public sf::Drawable {
 	}
 
 public:
-	PlayerSelector(sf::Vector2f size, state_transitions::PlayerInfo info) : outline(size), human_shape(size.x / 3), AI_shape(size.x / 3), shape_selector(size.x), player(info) {
+	PlayerSelector(sf::Vector2f size, state_transitions::PlayerInfo info) : outline(size), human_shape(size.x / 3), AI_shape(size.x / 3), shape_selector(size.x, info.shape_points), color_selector(size.x,info.color), player(info) {
 		outline.setOutlineColor(sf::Color::Cyan);
 		outline.setFillColor(sf::Color::Transparent);
 		outline.setOutlineThickness(2.f);
@@ -513,6 +613,12 @@ public:
 				refresh();
 			}
 		}
+		else if (color_selector.getBounds().contains(mouse)) {
+			if (auto c = color_selector.onClick(mouse); c) {
+				player.color = *c;
+				refresh();
+			}
+		}
 	}
 
 	operator state_transitions::PlayerInfo() const {
@@ -531,6 +637,7 @@ public:
 		target.draw(AI_shape, states);
 		target.draw(player_shape,states);
 		target.draw(shape_selector, states);
+		target.draw(color_selector, states);
 	}
 };
 
@@ -559,10 +666,10 @@ class PlayerSelect : public State {
 	void nextPlayer() {
 		switch (players.size()) {
 		case 0:
-			players.push_back(PlayerSelector{ player_select_size(), {3, sf::Color::Green, PlayerType::Mouse} });
+			players.push_back(PlayerSelector{ player_select_size(), {3, sf::Color(colors[0]), PlayerType::Mouse} });
 			break;
 		default:
-			players.push_back(PlayerSelector{ player_select_size(), { 5, sf::Color::Red, PlayerType::AIRando } });
+			players.push_back(PlayerSelector{ player_select_size(), { 5, sf::Color(colors[1]), PlayerType::AIRando } });
 			break;
 		}
 		updateLayout();
@@ -615,7 +722,7 @@ public:
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles");
+	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, sf::ContextSettings(0,0,2));
 
 	window.setFramerateLimit(60);
 

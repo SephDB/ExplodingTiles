@@ -71,6 +71,69 @@ Vec lerp(Vec a, Vec b, float val) {
 	return a + (b - a) * val;
 }
 
+class VisualBoard : public sf::Transformable, public sf::Drawable {
+	static sf::Shader* init_shader() {
+		static sf::Shader s;
+		if (s.getNativeHandle() == 0) {
+			//isn't loaded yet
+			sf::MemoryInputStream stream;
+			stream.open(board_shader.data(), board_shader.size());
+			s.loadFromStream(stream, sf::Shader::Type::Fragment);
+		}
+		return &s;
+	}
+	
+	sf::Shader* shader = init_shader();
+	
+	sf::Vertex outer[3]; //for drawing
+	sf::Vector2f inner[3]; //for coordinate calculations
+public:
+	sf::Vector3i selected;
+	int board_size;
+
+	VisualBoard(float radius, int board_size) : board_size(board_size) {
+		const float sqrt3 = std::sqrt(3.f);
+		inner[0] = { 0,  -2 * radius };
+		inner[1] = { radius * sqrt3, radius };
+		inner[2] = { -radius * sqrt3, radius };
+
+		const float outer_factor = (board_size + 1) / static_cast<float>(board_size); //Widen for outer edge
+		
+		outer[0] = sf::Vertex(inner[0]*outer_factor, sf::Color::Red);
+		outer[1] = sf::Vertex(inner[1]*outer_factor, sf::Color::Green);
+		outer[2] = sf::Vertex(inner[2]*outer_factor, sf::Color::Blue);
+	}
+
+	float getRadius() const {
+		return (inner[1].y - inner[0].y) / 3;
+	}
+
+	TriCoord mouseToBoard(sf::Vector2f mouse) const {
+		mouse = getInverseTransform().transformPoint(mouse);
+
+		float length = inner[1].y - inner[0].y;
+		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0, 1)) / length;
+		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
+
+		sf::Vector3i bary = sf::Vector3i(3.f * board_size * sf::Vector3f(v1, v2, 1 - v1 - v2));
+
+		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
+		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
+
+		return TriCoord(bary, board_size);
+	}
+
+	sf::Vector2f baryToScreen(sf::Vector3f tri) const {
+		return getTransform().transformPoint(tri.x * inner[0] + tri.y * inner[1] + tri.z * inner[2]);
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		shader->setUniform("hex_size", board_size);
+		shader->setUniform("selected", selected);
+		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform * getTransform(), states.texture, shader });
+	}
+
+};
 
 class BoardWithPlayers {
 	Board board;
@@ -208,11 +271,8 @@ public:
 };
 
 class GameState : public State {
-	sf::Vertex outer[3];
-	sf::Shader shader;
-
-	sf::Vector2f inner[3];
 	BoardWithPlayers board;
+	VisualBoard visual_board;
 
 	sf::CircleShape explode;
 	sf::Clock explode_timer;
@@ -225,30 +285,16 @@ class GameState : public State {
 
 	ScoreBar bar;
 	CrossShape exit;
-	
-	TriCoord mouseToBoard(sf::Vector2f mouse) const {
-		float length = inner[1].y - inner[0].y;
-		float v1 = 1 - dot(mouse - inner[0], sf::Vector2f(0, 1)) / length;
-		float v2 = 1 - dot(mouse - inner[1], inner[2] + (inner[0] - inner[2]) / 2.f - inner[1]) / (length * length);
-
-		sf::Vector3i bary = sf::Vector3i(3.f * board.getBoard().size() * sf::Vector3f(v1, v2, 1 - v1 - v2));
-
-		//ensure out of bounds coordinate when a coordinate < 0, converting to int != floor. Subtract one if a coordinate was below 0
-		bary -= sf::Vector3i(v1 < 0, v2 < 0, v1 + v2 > 1);
-
-		return TriCoord(bary, board.getBoard().size());
-	}
 
 	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
 		board.addPlayer(std::move(controller));
 		bar.addPlayer(color);
-		float radius = (inner[1].y - inner[0].y) / 3;
-		players.push_back(playerShape(polygon_n, color, radius / (board.getBoard().size() * 6 + 3)));
+		players.push_back(playerShape(polygon_n, color, visual_board.getRadius() / (board.getBoard().size() * 6 + 3)));
 	}
 
 public:
 	GameState(sf::Vector2f center, float radius, int board_size, const state_transitions::StartGame& game_info) 
-		: board(board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }), exit(sf::Color::Red,40) {
+		: board(board_size), visual_board(radius * .9f, board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }), exit(sf::Color::Red,40) {
 		
 		exit.setPosition(60, 60);
 		exit.setRotation(45);
@@ -256,23 +302,7 @@ public:
 		center.y += radius * 0.2f;
 		radius *= .9f;
 
-		const float r = radius * (board_size + 1) / board_size; //Widen for outer edge
-		const float sqrt3 = std::sqrt(3.f);
-		outer[0] = sf::Vertex({ center.x, center.y - 2 * r }, sf::Color::Red);
-		inner[0] = { center.x, center.y - 2 * radius };
-		outer[1] = sf::Vertex({ center.x + r * sqrt3, center.y + r }, sf::Color::Green);
-		inner[1] = { center.x + radius * sqrt3,center.y + radius };
-		outer[2] = sf::Vertex({ center.x - r * sqrt3, center.y + r }, sf::Color::Blue);
-		inner[2] = { center.x - radius * sqrt3,center.y + radius };
-
-		{
-			sf::MemoryInputStream stream;
-			stream.open(board_shader.data(), board_shader.size());
-			shader.loadFromStream(stream, sf::Shader::Type::Fragment);
-		}
-
-		shader.setUniform("hex_size", board_size);
-		shader.setUniform("selected", sf::Vector3i());
+		visual_board.setPosition(center);
 
 		const float size = radius / (board_size * 6 + 3);
 
@@ -307,7 +337,7 @@ public:
 		else {
 			exit.setColor(sf::Color::Red);
 		}
-		board.getCurrentPlayer().onInput(input_events::MouseMove{ mouseToBoard(mouse) });
+		board.getCurrentPlayer().onInput(input_events::MouseMove{ visual_board.mouseToBoard(mouse) });
 	}
 
 	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
@@ -319,7 +349,7 @@ public:
 			return state_transitions::ReturnToMain{};
 		}
 		else {
-			board.getCurrentPlayer().onInput(input_events::MouseClick{ mouseToBoard(mouse) });
+			board.getCurrentPlayer().onInput(input_events::MouseClick{ visual_board.mouseToBoard(mouse) });
 		}
 		return {}; //no transitions yet
 	}
@@ -329,12 +359,12 @@ public:
 			board.update();
 			explode_timer.restart();
 		}
-		shader.setUniform("selected", board.getCurrentPlayer().selected().bary(board.getBoard().size()));
+		visual_board.selected = board.getCurrentPlayer().selected().bary(board.getBoard().size());
 		bar.update(board.getBoard());
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform, states.texture, &shader });
+		target.draw(visual_board, states);
 
 		const float explosion_progress = explode_timer.getElapsedTime().asSeconds() / explosion_length;
 
@@ -342,10 +372,8 @@ public:
 			auto s = board.getBoard()[c];
 			if (s.num == 0) return;
 
-			auto [x, y, z] = c.tri_center(board.getBoard().size());
+			auto center = visual_board.baryToScreen(c.tri_center(board.getBoard().size()));
 
-			auto center = x * inner[0] + y * inner[1] + z * inner[2];
-			
 			states.transform.translate(center);
 			
 			const sf::CircleShape& circle = players[s.player];
@@ -357,8 +385,7 @@ public:
 				target.draw(explode, explode_state);
 				for (const auto& n : c.neighbors()) {
 					if (board.getBoard().inBounds(n)) {
-						auto [x2, y2, z2] = n.tri_center(board.getBoard().size());
-						auto move_target = x2 * inner[0] + y2 * inner[1] + z2 * inner[2] - center;
+						auto move_target = visual_board.baryToScreen(n.tri_center(board.getBoard().size())) - center;
 						auto move_state = states;
 						move_state.transform.translate(lerp(move_target/3.f,move_target,explosion_progress));
 						target.draw(circle, move_state);
@@ -575,15 +602,15 @@ class PlayerSelector : public sf::Transformable, public sf::Drawable {
 
 	void refresh() {
 		player_shape = playerShape(player.shape_points, player.color, outline.getSize().x / 4);
-		player_shape.setPosition(outline.getSize().x / 2, player_shape.getRadius() + outline.getSize().y / 10);
+		player_shape.setPosition(outline.getSize().x / 2, player_shape.getRadius() + 10);
 
-		shape_selector.setPosition(0, player_shape.getPosition().y + player_shape.getRadius() + 20);
+		shape_selector.setPosition(0, player_shape.getPosition().y + player_shape.getRadius() + 5);
 		auto shape_pos = shape_selector.getBounds();
-		color_selector.setPosition(0, shape_pos.top + shape_pos.height + 20);
+		color_selector.setPosition(0, shape_pos.top + shape_pos.height + 5);
 		
 		sf::FloatRect selector_pos = (player.playerBehavior == PlayerType::Mouse) ? human_shape.getBounds() : AI_shape.getBounds();
-		selector.setPosition(selector_pos.left - selector_pos.width*0.1f,selector_pos.top - selector_pos.height * 0.1f);
-		selector.setSize(sf::Vector2f(selector_pos.width*1.2f, selector_pos.height*1.2f));
+		selector.setPosition(selector_pos.left - 3,selector_pos.top - 3);
+		selector.setSize(sf::Vector2f(selector_pos.width + 6, selector_pos.height + 6));
 	}
 
 public:
@@ -596,9 +623,11 @@ public:
 		outline.setFillColor(sf::Color::Transparent);
 		outline.setOutlineThickness(2.f);
 
-		human_shape.setPosition(0, size.y - human_shape.getBounds().height - 20);
+		human_shape.setPosition(0, size.y - human_shape.getBounds().height - 10);
 		AI_shape.setPosition(human_shape.getPosition() + sf::Vector2f(size.x / 2, 0));
-		selector.setFillColor(sf::Color::Magenta);
+		selector.setFillColor(sf::Color::Transparent);
+		selector.setOutlineColor(sf::Color::White);
+		selector.setOutlineThickness(2.f);
 
 		remove.setPosition(size.x, 0);
 		remove.setRotation(45);
@@ -664,19 +693,21 @@ class PlayerSelect : public State {
 	sf::Vector2f dims;
 	
 	sf::Vector2f player_select_size() const {
-		return { dims.x / 6,dims.y / 2 };
+		return { dims.x / 6,dims.x / 4 };
 	}
 
 	void updateLayout() {
 		const auto size = player_select_size();
 		const float padding = 20;
 
+		const float y_center = dims.y - size.y/2 - padding;
+
 		float left = dims.x / 2 - (size.x+padding) * players.size() / 2;
 		for (auto& p : players) {
-			p.setPosition({ left,dims.y / 2 - size.y / 2 });
+			p.setPosition({ left, y_center - size.y/2 });
 			left += padding + size.x;
 		}
-		add_player.setPosition({ left + add_player.getBounds().width/2, dims.y / 2 });
+		add_player.setPosition({ left + add_player.getBounds().width/2, y_center });
 	}
 
 	void nextPlayer() {
@@ -696,7 +727,7 @@ public:
 		play_button.setFillColor(sf::Color::Yellow);
 		play_button.setRotation(-30);
 		play_button.setOrigin(sf::Vector2f(play_button.getRadius(),play_button.getRadius()));
-		play_button.setPosition(dims / 2.f + sf::Vector2f(0,play_button.getRadius() + player_select_size().y/2+20));
+		play_button.setPosition(dims.x - play_button.getRadius() - 20, dims.y / 2);
 
 		nextPlayer();
 	}

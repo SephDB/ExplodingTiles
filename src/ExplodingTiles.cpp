@@ -569,6 +569,7 @@ class PlayerSelector : public sf::Transformable, public sf::Drawable {
 	sf::CircleShape player_shape;
 	ShapeSelector shape_selector;
 	ColorSelector color_selector;
+	CrossShape remove;
 	state_transitions::PlayerInfo player;
 	sf::RectangleShape selector;
 
@@ -586,7 +587,11 @@ class PlayerSelector : public sf::Transformable, public sf::Drawable {
 	}
 
 public:
-	PlayerSelector(sf::Vector2f size, state_transitions::PlayerInfo info) : outline(size), human_shape(size.x / 3), AI_shape(size.x / 3), shape_selector(size.x, info.shape_points), color_selector(size.x,info.color), player(info) {
+	PlayerSelector(sf::Vector2f size, state_transitions::PlayerInfo info) 
+		: outline(size), human_shape(size.x / 3), AI_shape(size.x / 3), 
+		  shape_selector(size.x, info.shape_points), color_selector(size.x,info.color), 
+		  remove(sf::Color::Red,size.x/5), player(info) {
+
 		outline.setOutlineColor(sf::Color::Cyan);
 		outline.setFillColor(sf::Color::Transparent);
 		outline.setOutlineThickness(2.f);
@@ -594,10 +599,15 @@ public:
 		human_shape.setPosition(0, size.y - human_shape.getBounds().height - 20);
 		AI_shape.setPosition(human_shape.getPosition() + sf::Vector2f(size.x / 2, 0));
 		selector.setFillColor(sf::Color::Magenta);
+
+		remove.setPosition(size.x, 0);
+		remove.setRotation(45);
+
 		refresh();
 	}
 
-	void onMouseClick(sf::Vector2f mouse) {
+	//returns whether the remove button was pressed
+	bool onMouseClick(sf::Vector2f mouse) {
 		mouse = getInverseTransform().transformPoint(mouse);
 		if (human_shape.getBounds().contains(mouse)) {
 			player.playerBehavior = PlayerType::Mouse;
@@ -619,6 +629,10 @@ public:
 				refresh();
 			}
 		}
+		else if (remove.getBounds().contains(mouse)) {
+			return true;
+		}
+		return false;
 	}
 
 	operator state_transitions::PlayerInfo() const {
@@ -626,7 +640,8 @@ public:
 	}
 
 	sf::FloatRect getBounds() const {
-		return getTransform().transformRect(outline.getGlobalBounds());
+		const float outside_outline = remove.getBounds().height / 2;
+		return getTransform().transformRect(sf::FloatRect(0,-outside_outline/2,outline.getSize().x+outside_outline/2, outline.getSize().y+outside_outline));
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
@@ -638,6 +653,7 @@ public:
 		target.draw(player_shape,states);
 		target.draw(shape_selector, states);
 		target.draw(color_selector, states);
+		target.draw(remove, states);
 	}
 };
 
@@ -698,7 +714,11 @@ public:
 		} else {
 			for (auto& p : players) {
 				if (p.getBounds().contains(mouse)) {
-					p.onMouseClick(mouse);
+					if (p.onMouseClick(mouse)) {
+						auto pos = &p - &players.front();
+						players.erase(players.begin() + pos);
+						updateLayout();
+					}
 					break;
 				}
 			}

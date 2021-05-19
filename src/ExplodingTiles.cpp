@@ -257,7 +257,10 @@ namespace state_transitions {
 		sf::Color color;
 		PlayerType playerBehavior;
 	};
-	using StartGame = std::vector<PlayerInfo>;
+	struct StartGame {
+		std::vector<PlayerInfo> players;
+		int board_size = 3;
+	};
 	struct ReturnToMain {};
 	struct OpenPlayerSelect {};
 	using StateChangeEvent = std::variant<std::monostate, OpenPlayerSelect, StartGame, ReturnToMain>;
@@ -293,8 +296,8 @@ class GameState : public State {
 	}
 
 public:
-	GameState(sf::Vector2f center, float radius, int board_size, const state_transitions::StartGame& game_info) 
-		: board(board_size), visual_board(radius * .9f, board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }), exit(sf::Color::Red,40) {
+	GameState(sf::Vector2f center, float radius, const state_transitions::StartGame& game_info) 
+		: board(game_info.board_size), visual_board(radius * .9f, game_info.board_size), bar({ center - sf::Vector2f(radius, radius), sf::Vector2f(2 * radius, radius * 0.1f) }), exit(sf::Color::Red,40) {
 		
 		exit.setPosition(60, 60);
 		exit.setRotation(45);
@@ -304,7 +307,7 @@ public:
 
 		visual_board.setPosition(center);
 
-		const float size = radius / (board_size * 6 + 3);
+		const float size = radius / (game_info.board_size * 6 + 3);
 
 		explode = sf::CircleShape(size * 3);
 		explode.setFillColor(sf::Color::Yellow);
@@ -325,7 +328,7 @@ public:
 
 		reset_arrow = circArrow(center - extra_offset, sf::Color::White, 15, 24, 5);
 
-		for (auto& [num, color, behavior] : game_info) {
+		for (auto& [num, color, behavior] : game_info.players) {
 			addPlayer(num, color, toPlayer(behavior));
 		}
 	}
@@ -691,6 +694,9 @@ class PlayerSelect : public State {
 	sf::CircleShape play_button;
 	std::vector<PlayerSelector> players;
 	sf::Vector2f dims;
+
+	VisualBoard board;
+	sf::CircleShape increase_board, decrease_board;
 	
 	sf::Vector2f player_select_size() const {
 		return { dims.x / 6,dims.x / 4 };
@@ -702,7 +708,7 @@ class PlayerSelect : public State {
 
 		const float y_center = dims.y - size.y/2 - padding;
 
-		float left = dims.x / 2 - (size.x+padding) * players.size() / 2;
+		float left = dims.x / 2 - (size.x+padding) * players.size() / 2 + padding/2;
 		for (auto& p : players) {
 			p.setPosition({ left, y_center - size.y/2 });
 			left += padding + size.x;
@@ -723,12 +729,31 @@ class PlayerSelect : public State {
 	}
 
 public:
-	PlayerSelect(sf::Vector2f dims) : add_player(sf::Color::Green,dims.x/20), play_button(dims.x / 20, 3), dims(dims) {
+	PlayerSelect(sf::Vector2f dims) : add_player(sf::Color::Green,dims.x/20), play_button(dims.x / 20, 3), dims(dims), 
+		board(dims.y/5,3), increase_board(dims.x/30,3) {
+		
 		play_button.setFillColor(sf::Color::Yellow);
 		play_button.setRotation(-30);
 		play_button.setOrigin(sf::Vector2f(play_button.getRadius(),play_button.getRadius()));
 		play_button.setPosition(dims.x - play_button.getRadius() - 20, dims.y / 2);
 
+		board.setPosition(sf::Vector2f(dims.x / 2, dims.y / 4 + 20));
+
+		increase_board.setFillColor(sf::Color::Green);
+		increase_board.setOutlineColor(sf::Color::Black);
+		increase_board.setOutlineThickness(1);
+		increase_board.setScale(1, 1.2f);
+		increase_board.setOrigin(increase_board.getRadius(), increase_board.getRadius());
+
+		decrease_board = increase_board;
+		decrease_board.setRotation(180);
+		
+		const float dist = dims.y / 5 + 2*increase_board.getRadius();
+
+		decrease_board.setPosition(board.getPosition() + sf::Vector2f(dist, decrease_board.getRadius()));
+		increase_board.setPosition(board.getPosition() + sf::Vector2f(dist, -increase_board.getRadius()));
+
+		nextPlayer();
 		nextPlayer();
 	}
 
@@ -738,10 +763,17 @@ public:
 	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
 		if (play_button.getGlobalBounds().contains(mouse)) {
 			state_transitions::StartGame ret;
-			std::copy(players.begin(), players.end(), std::back_inserter(ret));
+			std::copy(players.begin(), players.end(), std::back_inserter(ret.players));
+			ret.board_size = board.board_size;
 			return ret;
 		} else if (add_player.getBounds().contains(mouse)) {
 			nextPlayer();
+		}
+		else if (increase_board.getGlobalBounds().contains(mouse)) {
+			board.board_size++;
+		}
+		else if (decrease_board.getGlobalBounds().contains(mouse)) {
+			board.board_size = std::max(1, board.board_size - 1);
 		} else {
 			for (auto& p : players) {
 				if (p.getBounds().contains(mouse)) {
@@ -764,6 +796,9 @@ public:
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		target.draw(add_player,states);
 		target.draw(play_button,states);
+		target.draw(board, states);
+		target.draw(decrease_board, states);
+		target.draw(increase_board, states);
 		for (auto& p : players) {
 			target.draw(p,states);
 		}
@@ -796,7 +831,7 @@ int main()
 							game = std::make_unique<PlayerSelect>(sf::Vector2f(800,600));
 						},
 						[&](state_transitions::StartGame& g) {
-							game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,3,g);
+							game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,g);
 						},
 						[&](state_transitions::ReturnToMain) {
 							game = std::make_unique<MainMenu>(sf::Vector2f(800,600));

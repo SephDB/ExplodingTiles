@@ -73,22 +73,11 @@ Vec lerp(Vec a, Vec b, float val) {
 }
 
 class VisualBoard : public sf::Transformable, public sf::Drawable {
-	static sf::Shader* init_shader() {
-		static sf::Shader s;
-		if (s.getNativeHandle() == 0) {
-			//isn't loaded yet
-			sf::MemoryInputStream stream;
-			stream.open(board_shader.data(), board_shader.size());
-			s.loadFromStream(stream, sf::Shader::Type::Fragment);
-		}
-		return &s;
-	}
-	
-	sf::Shader* shader = init_shader();
-	
 	sf::Vertex outer[3]; //for drawing
 	sf::Vector2f inner[3]; //for coordinate calculations
 public:
+	inline static sf::Shader* shader = nullptr;
+	
 	sf::Vector3i selected;
 	int board_size;
 
@@ -818,6 +807,14 @@ public:
 int main()
 {
 	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, sf::ContextSettings(0,0,2));
+
+	sf::Shader s;
+	{
+		sf::MemoryInputStream stream;
+		stream.open(board_shader.data(), board_shader.size());
+		s.loadFromStream(stream, sf::Shader::Type::Fragment);
+	}
+	VisualBoard::shader = &s;
 
 	window.setFramerateLimit(60);
 

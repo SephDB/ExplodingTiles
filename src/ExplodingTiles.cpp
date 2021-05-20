@@ -3,6 +3,7 @@
 #include <optional>
 #include <vector>
 #include <memory>
+#include <span>
 #include <cmath>
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
@@ -108,6 +109,10 @@ public:
 		return (inner[1].y - inner[0].y) / 3;
 	}
 
+	float getTriRadius() const {
+		return getRadius() / (board_size * 6 + 3);
+	}
+
 	TriCoord mouseToBoard(sf::Vector2f mouse) const {
 		mouse = getInverseTransform().transformPoint(mouse);
 
@@ -134,6 +139,58 @@ public:
 	}
 
 };
+
+void draw_board(sf::RenderTarget& target, sf::RenderStates states, const VisualBoard& vis, const Board& b, std::span<const sf::CircleShape> players, float explosion_progress) {
+	target.draw(vis, states);
+	
+	sf::CircleShape explode{ vis.getTriRadius()*3 };
+	explode.setFillColor(sf::Color::Yellow);
+	explode.setOutlineColor(sf::Color::Red);
+	explode.setOutlineThickness(-explode.getRadius() / 6);
+	explode.setOrigin(explode.getRadius(), explode.getRadius());
+
+	auto draw_tile = [&](TriCoord c, sf::RenderStates states) {
+		auto s = b[c];
+		if (s.num == 0) return;
+
+		auto center = vis.baryToScreen(c.tri_center(b.size()));
+
+		states.transform.translate(center);
+
+		const sf::CircleShape& circle = players[s.player];
+
+		if (s.num > b.allowedPieces(c)) {
+			auto explode_state = states;
+			float scale = lerp(0.3f, 1.0f, explosion_progress);
+			explode_state.transform.scale(scale, scale);
+			target.draw(explode, explode_state);
+			for (const auto& n : c.neighbors()) {
+				if (b.inBounds(n)) {
+					auto move_target = vis.baryToScreen(n.tri_center(b.size())) - center;
+					auto move_state = states;
+					move_state.transform.translate(lerp(move_target / 3.f, move_target, explosion_progress));
+					target.draw(circle, move_state);
+				}
+			}
+			return;
+		}
+
+		sf::Vector2f offset{};
+
+		if (s.num == 2 && c.R) {
+			states.transform.translate(-circle.getOrigin() / 2.f);
+		}
+
+		target.draw(circle, states);
+
+		if (s.num == 2) {
+			states.transform.translate(circle.getOrigin() * 2.f / 3.f);
+			target.draw(circle, states);
+		}
+	};
+
+	b.iterTiles([&](auto c) {draw_tile(c, states); return true; });
+}
 
 class BoardWithPlayers {
 	Board board;
@@ -277,7 +334,6 @@ class GameState : public State {
 	BoardWithPlayers board;
 	VisualBoard visual_board;
 
-	sf::CircleShape explode;
 	sf::Clock explode_timer;
 
 	sf::VertexArray reset_arrow;
@@ -292,7 +348,7 @@ class GameState : public State {
 	void addPlayer(int polygon_n, sf::Color color, std::unique_ptr<Player> controller) {
 		board.addPlayer(std::move(controller));
 		bar.addPlayer(color);
-		players.push_back(playerShape(polygon_n, color, visual_board.getRadius() / (board.getBoard().size() * 6 + 3)));
+		players.push_back(playerShape(polygon_n, color, visual_board.getTriRadius()));
 	}
 
 public:
@@ -307,13 +363,7 @@ public:
 
 		visual_board.setPosition(center);
 
-		const float size = radius / (game_info.board_size * 6 + 3);
-
-		explode = sf::CircleShape(size * 3);
-		explode.setFillColor(sf::Color::Yellow);
-		explode.setOutlineColor(sf::Color::Red);
-		explode.setOutlineThickness(-size / 2);
-		explode.setOrigin(size * 3, size * 3);
+		const float size = visual_board.getTriRadius();
 
 		sf::Transform rot = sf::Transform().rotate(-60);
 
@@ -367,56 +417,15 @@ public:
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-		target.draw(visual_board, states);
-
-		const float explosion_progress = explode_timer.getElapsedTime().asSeconds() / explosion_length;
-
-		auto draw_tile = [this, explosion_progress, &target](TriCoord c, sf::RenderStates states) {
-			auto s = board.getBoard()[c];
-			if (s.num == 0) return;
-
-			auto center = visual_board.baryToScreen(c.tri_center(board.getBoard().size()));
-
-			states.transform.translate(center);
-			
-			const sf::CircleShape& circle = players[s.player];
-
-			if (s.num > board.getBoard().allowedPieces(c)) {
-				auto explode_state = states;
-				float scale = lerp(0.3f, 1.0f, explosion_progress);
-				explode_state.transform.scale(scale,scale);
-				target.draw(explode, explode_state);
-				for (const auto& n : c.neighbors()) {
-					if (board.getBoard().inBounds(n)) {
-						auto move_target = visual_board.baryToScreen(n.tri_center(board.getBoard().size())) - center;
-						auto move_state = states;
-						move_state.transform.translate(lerp(move_target/3.f,move_target,explosion_progress));
-						target.draw(circle, move_state);
-					}
-				}
-				return;
-			}
-
-			sf::Vector2f offset{};
-
-			if (s.num == 2 && c.R) {
-				states.transform.translate(-circle.getOrigin() / 2.f);
-			}
-
-			target.draw(circle, states);
-
-			if (s.num == 2) {
-				states.transform.translate(circle.getOrigin() * 2.f / 3.f);
-				target.draw(circle, states);
-			}
-		};
 
 		if (auto player = board.getWinner(); player) {
+			target.draw(visual_board, states);
 			target.draw(players[*player], { show_current_player });
 			target.draw(players[*player], { show_winner });
 		}
 		else {
-			board.getBoard().iterTiles([&](auto c) {draw_tile(c, states); return true; });
+			const float explosion_progress = explode_timer.getElapsedTime().asSeconds() / explosion_length;
+			draw_board(target, states, visual_board, board.getBoard(), players, explosion_progress);
 			target.draw(players[board.getCurrentPlayerNum()], { show_current_player });
 		}
 

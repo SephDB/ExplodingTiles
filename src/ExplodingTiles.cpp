@@ -129,7 +129,7 @@ public:
 
 };
 
-void draw_board(sf::RenderTarget& target, sf::RenderStates states, const VisualBoard& vis, const Board& b, std::span<const sf::CircleShape> players, float explosion_progress) {
+void draw_board(sf::RenderTarget& target, sf::RenderStates states, const VisualBoard& vis, const Board& b, std::span<const sf::CircleShape> players, float explosion_progress, bool draw_exploding_players = true) {
 	target.draw(vis, states);
 	
 	sf::CircleShape explode{ vis.getTriRadius()*3 };
@@ -153,14 +153,15 @@ void draw_board(sf::RenderTarget& target, sf::RenderStates states, const VisualB
 			float scale = lerp(0.3f, 1.0f, explosion_progress);
 			explode_state.transform.scale(scale, scale);
 			target.draw(explode, explode_state);
-			for (const auto& n : c.neighbors()) {
-				if (b.inBounds(n)) {
-					auto move_target = vis.baryToScreen(n.tri_center(b.size())) - center;
-					auto move_state = states;
-					move_state.transform.translate(lerp(move_target / 3.f, move_target, explosion_progress));
-					target.draw(circle, move_state);
+			if(draw_exploding_players)
+				for (const auto& n : c.neighbors()) {
+					if (b.inBounds(n)) {
+						auto move_target = vis.baryToScreen(n.tri_center(b.size())) - center;
+						auto move_state = states;
+						move_state.transform.translate(lerp(move_target / 3.f, move_target, explosion_progress));
+						target.draw(circle, move_state);
+					}
 				}
-			}
 			return;
 		}
 
@@ -424,14 +425,77 @@ public:
 	}
 };
 
+class Logo : public sf::Transformable, public sf::Drawable {
+	VisualBoard board;
+	Board b;
+	std::array<sf::CircleShape, 2> players;
+	sf::VertexArray trail;
+
+	void draw_trail(sf::RenderTarget& target, sf::RenderStates states, sf::Vector2f start, float length, int angle, sf::CircleShape p) const {
+		length /= 2;
+		sf::Transform draw;
+		draw.translate(start).scale(length,length).rotate(angle).translate(1,0);
+
+		auto trail_state = states;
+		trail_state.transform *= draw;
+		target.draw(trail, trail_state);
+
+		p.setRadius(p.getRadius() * 5);
+		p.setOutlineThickness(2);
+		p.setRotation(angle / 2);
+		p.setOrigin(p.getRadius(), p.getRadius());
+		p.setPosition(draw.transformPoint(1, 0));
+		target.draw(p, states);
+	}
+
+public:
+	Logo(float size) : board(size/2, 2), b(2), players{ {playerShape(3,sf::Color::Red,board.getTriRadius()),playerShape(5,sf::Color::Yellow,board.getTriRadius())} } {
+		//Exploding tile
+		b.incTile({ 2,1,true }, 0);
+		b.incTile({ 2,1,true }, 0);
+		b.incTile({ 2,1,true }, 0);
+
+		//semi-randomly filled tiles
+		b.incTile({ 3,2,false }, 0);
+		b.incTile({ 2,2,true }, 1);
+		b.incTile({ 2,2,true }, 1);
+		b.incTile({ 2,0,true }, 1);
+		b.incTile({ 1,1,false }, 0);
+		b.incTile({ 0,3,true }, 0);
+
+		sf::Color transparent = sf::Color::White;
+		transparent.a = 0;
+		sf::Color halftrans = transparent;
+		halftrans.a = 127;
+
+		trail.setPrimitiveType(sf::PrimitiveType::TriangleFan);
+		trail.append({ {0,0}, halftrans });
+		trail.append({ { 1,0 }, sf::Color::White });
+		trail.append({ { 1,0.25f }, transparent });
+		trail.append({ { -1,0 }, transparent });
+		trail.append({ { 1,-0.25f }, transparent });
+		trail.append({ { 1,0 }, sf::Color::White });
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		draw_board(target, states, board, b, players, 3, false); //huge explosion :D
+		draw_trail(target, states, board.baryToScreen(TriCoord{ 2,1,true }.tri_center(board.board_size)), board.getRadius() * 1.5f, 150, players[0]);
+		draw_trail(target, states, board.baryToScreen(TriCoord{ 2,1,true }.tri_center(board.board_size)), board.getRadius() * 1.5f, 30, players[0]);
+		draw_trail(target, states, board.baryToScreen(TriCoord{ 2,1,true }.tri_center(board.board_size)), board.getRadius() * 1.5f, 90, players[1]);
+	}
+};
+
 class MainMenu : public State {
 	sf::CircleShape play_button;
+	Logo logo;
 public:
-	MainMenu(sf::Vector2f dims) : play_button(dims.x/20,3) {
+	MainMenu(sf::Vector2f dims) : play_button(dims.x/20,3), logo(dims.y/2.4f) {
 		play_button.setFillColor(sf::Color::Yellow);
 		play_button.setRotation(-30);
 		play_button.setOrigin(sf::Vector2f(dims.x / 20, dims.x / 20));
-		play_button.setPosition(dims / 2.f);
+		play_button.setPosition(dims.x / 2, dims.y * 4/5);
+		logo.setPosition(dims.x/2,dims.y / 4 + 10);
 	}
 
 	void mouseMove(sf::Vector2f mouse) override {
@@ -449,6 +513,7 @@ public:
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		target.draw(logo);
 		target.draw(play_button);
 	}
 };

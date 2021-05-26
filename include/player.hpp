@@ -7,6 +7,7 @@
 #include <optional>
 #include <functional>
 #include <variant>
+#include <SFML/System/Clock.hpp>
 #include "board.hpp"
 
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
@@ -118,14 +119,14 @@ namespace AI {
 	AIFunc auto firstSuccess(Fs... strats) {
 		return [=](const Board& b, std::span<TriCoord> moves, int player) {
 			std::optional<TriCoord> m{};
-			((m = strats.findMove(b, moves, player)) || ...);
+			((m = strats(b, moves, player)) || ...);
 			return *m;
 		};
 	}
 
-	AIFunc auto randomAI(std::random_device& random) {
-		return [engine = std::default_random_engine(random())](const Board&, std::span<TriCoord> moves, int) mutable {
-			return moves[std::uniform_int_distribution(0, static_cast<int>(moves.size() - 1))(engine)];
+	AIFunc auto randomAI(std::default_random_engine& random) {
+		return [engine = &random](const Board&, std::span<TriCoord> moves, int) {
+			return moves[std::uniform_int_distribution(0, static_cast<int>(moves.size() - 1))(*engine)];
 		};
 	}
 }
@@ -136,14 +137,14 @@ enum class PlayerType {
 };
 
 std::unique_ptr<Player> toPlayer(PlayerType t) {
-	thread_local std::random_device random_initializer;
+	static std::default_random_engine random_engine(std::random_device{}());
 	switch (t)
 	{
 	case PlayerType::Mouse:
 		return std::make_unique<MousePlayer>();
 		break;
 	case PlayerType::AIRando:
-		return std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random_initializer)));
+		return std::make_unique<AI::InteractiveAIPlayer>(AI::AIPlayer(AI::randomAI(random_engine)));
 		break;
 	}
 	return nullptr;

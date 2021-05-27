@@ -68,7 +68,10 @@ public:
 namespace AI {
 
 	using AIFunction = std::function<std::optional<TriCoord>(const Board&, std::span<TriCoord>, int)>;
-
+	
+	template<typename F>
+	concept AIFunc = std::is_invocable_r_v<std::optional<TriCoord>,F, const Board&, std::span<TriCoord>, int>;
+	
 	class AIPlayer : public Player {
 		AIFunction f;
 		TriCoord chosen{};
@@ -112,11 +115,9 @@ namespace AI {
 		}
 	};
 
-	template<typename F>
-	concept AIFunc = std::convertible_to<F,AIFunction>;
+	
 
-	template<AIFunc... Fs>
-	AIFunc auto firstSuccess(Fs... strats) {
+	AIFunc auto firstSuccess(AIFunc auto... strats) {
 		return [=](const Board& b, std::span<TriCoord> moves, int player) {
 			std::optional<TriCoord> m{};
 			((m = strats(b, moves, player)) || ...);

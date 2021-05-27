@@ -37,6 +37,8 @@ public:
 	Player& getCurrentPlayer() { return *players[current_player]; }
 	const Player& getCurrentPlayer() const { return *players[current_player]; }
 
+	std::size_t getPlayerCount() const { return players.size(); }
+
 	void update() {
 		if (board.needsUpdate()) {
 			board.update_step();

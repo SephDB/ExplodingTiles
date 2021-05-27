@@ -50,6 +50,11 @@ public:
 		return _state[c.x * 2 + c.y * _size * 4 + c.R];
 	}
 
+	TileState at(TriCoord c) const {
+		if (inBounds(c)) return (*this)[c];
+		return {};
+	}
+
 	bool incTile(TriCoord c, int player, bool replace = false) {
 		if (!inBounds(c))
 			return false;

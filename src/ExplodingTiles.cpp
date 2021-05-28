@@ -194,12 +194,8 @@ public:
 	}
 
 	void update(const Board& b) {
-		std::vector<float> player_counts(players.size());
-		b.iterTiles([&](TriCoord c) {
-			if (b[c].num > 0)
-				player_counts[b[c].player] += b[c].num;
-			return true; });
-		for (size_t p = 0; p < players.size(); ++p) {
+		auto player_counts = b.playerTotals();
+		for (size_t p = 0; p < player_counts.size(); ++p) {
 			players[p].second = lerp<float>(players[p].second, player_counts[p], 0.3f);
 		}
 	}

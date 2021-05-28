@@ -30,10 +30,11 @@ Filter auto maxFitness(Fitness auto fitness) {
 			Board test = b;
 			test.incTile(m, player);
 			int num = 0;
-			while (test.needsUpdate() && num < 1000) {
+			while (test.needsUpdate() && !test.isWon()) {
 				test.update_step();
 				++num;
 			}
+
 			return fitness(test,player,num);
 		};
 
@@ -74,16 +75,12 @@ bool notNextToExploding(const Board& b, TriCoord c, int player) {
 Filter auto biggestExplosion = filterIncludeMoves(explodingFilter) | maxFitness([](auto&, int, int num) {return num; });
 
 Filter auto maxGain = filterIncludeMoves(explodingFilter) | maxFitness([](auto& board, int player, int) {
-	int count = 0;
-	board.iterTiles([&](TriCoord c) {
-		if (board[c].player == player)
-			count += board[c].num;
-		return true;
-		});
-	return count;
+	return board.playerTotals()[player];
 	});
 
 Filter auto heuristic = maxFitness([](const Board& board, int player, int) {
+	if (board.isWon()) return std::numeric_limits<int>::max();
+
 	int count = 0;
 	board.iterTiles([&](TriCoord c) {
 		if (board[c].player == player) {

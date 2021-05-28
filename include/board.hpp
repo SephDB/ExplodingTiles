@@ -3,6 +3,8 @@
 #include <vector>
 #include <numeric>
 #include <algorithm>
+#include <span>
+#include <optional>
 #include "coords.hpp"
 
 struct TileState {
@@ -13,6 +15,7 @@ struct TileState {
 class Board {
 	std::vector<TileState> _state;
 	std::vector<TriCoord> _exploding;
+	std::vector<int> _totals;
 	int _size;
 
 	TileState& get(TriCoord c) {
@@ -22,6 +25,18 @@ class Board {
 public:
 	Board() = default;
 	Board(int size) : _state(size* size * 8), _size(size) {}
+
+	std::span<const int> playerTotals() const { return _totals; }
+
+	std::optional<int> isWon() const {
+		if (std::ranges::count_if(_totals, [](auto e) {return e != 0; }) == 1) {
+			auto winner = std::ranges::find_if(_totals, [](auto e) {return e > 1; });
+			if (winner != _totals.end()) {
+				return winner - _totals.begin();
+			}
+		}
+		return {};
+	}
 
 	bool inBounds(TriCoord c) const {
 		auto b = c.bary(_size);
@@ -63,6 +78,14 @@ public:
 
 		if (!replace && s.player >= 0 && s.player != player) return false;
 
+		if (std::size_t(player) >= _totals.size()) _totals.resize(player+1,0);
+
+		if(!replace) _totals[player]++; //Only add one to the total if it was a move done by the player instead of an explosion
+
+		if (s.player != player && s.player >= 0) {
+			_totals[s.player] -= s.num;
+			_totals[player] += s.num;
+		}
 		s.player = player;
 		s.num++;
 		if (s.num > allowedPieces(c)) _exploding.push_back(c);

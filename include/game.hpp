@@ -56,22 +56,6 @@ public:
 	}
 
 	std::optional<int> getWinner() const {
-		std::size_t total = 0;
-		int player = -1;
-		bool multiple_players = false;
-		board.iterTiles([&](TriCoord c) {
-			auto board_player = board[c].player;
-			if (board_player != -1) {
-				total += board[c].num;
-				if (player == -1) player = board_player;
-				if (player != board_player) {
-					multiple_players = true;
-					return false;
-				}
-			}
-			return true;
-			});
-		if (multiple_players || total <= players.size()) return std::nullopt;
-		return player;
+		return board.isWon();
 	}
 };

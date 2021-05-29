@@ -19,6 +19,7 @@ const float edge_thickness = 0.04;
 const vec3 edge_color = vec3(1);
 const vec3 highlight_color = vec3(1,0,1);
 
+uniform sampler2D board;
 uniform int hex_size;
 uniform ivec3 selected;
 
@@ -37,15 +38,13 @@ void main()
 	vec3 bound_edge = vec3(edge_thickness*2);
 
 	vec3 coordinates = (gl_Color.rgb) * (hex_size+1) * 3;
-	ivec3 coords = floor(coordinates);
-	
-	ivec3 larger_selected = selected + ivec3(1);
-	
+	ivec3 coords = ivec3(floor(coordinates));
 	
 	if(all(greaterThan(coordinates,min_bound)) && all(lessThan(coordinates,max_bound))) {
 		//Inner edge
 		vec3 distance = min(fract(coordinates),ceil(coordinates)-coordinates);
-		if(larger_selected == floor(coordinates)) {
+		ivec3 current = coords - ivec3(1);
+		if(selected == current) {
 			float mix = smoothstep(0,edge_thickness/2,min3(distance));
 			gl_FragColor.rgb = edge_color * (1-mix) + mix*highlight_color;
 			gl_FragColor.a = 1-smoothstep(edge_thickness/2,edge_thickness*1.5,min3(distance))*0.3;
@@ -53,13 +52,22 @@ void main()
 			gl_FragColor.rgb = edge_color;
 			gl_FragColor.a = 1-smoothstep(edge_thickness*0.8,edge_thickness,min3(distance));
 		}
+		ivec4 tile = ivec4(texelFetch(board,current.xy,0) * 255);
+		//grab the correct tile out
+		ivec2 t = tile.rg;
+		if(current.x + current.y + current.z == (hex_size*3 - 1)) {
+			t = tile.ba;
+		}
+		if(t.x == 1) {
+			gl_FragColor = vec4(1);
+		}
 	} else if(all(greaterThan(coordinates,min_bound-bound_edge)) && all(lessThan(coordinates,max_bound+bound_edge))) {
 		//Outer edge
 		vec3 distance = max(min_bound - coordinates, coordinates - max_bound);
 		gl_FragColor.rgb = edge_color;
 		gl_FragColor.a = 1 - smoothstep(edge_thickness*1.5,edge_thickness*2,max3(distance));
 	} else {
-		gl_FragColor = 0;
+		gl_FragColor = vec4(0);
 	}
 }
 )";
@@ -76,6 +84,8 @@ Vec lerp(Vec a, Vec b, float val) {
 class VisualBoard : public sf::Transformable, public sf::Drawable {
 	sf::Vertex outer[3]; //for drawing
 	sf::Vector2f inner[3]; //for coordinate calculations
+	sf::Texture board_rep;
+	sf::Image board_rep_img;
 public:
 	inline static sf::Shader* shader = nullptr;
 	
@@ -93,6 +103,32 @@ public:
 		outer[0] = sf::Vertex(inner[0]*outer_factor, sf::Color::Red);
 		outer[1] = sf::Vertex(inner[1]*outer_factor, sf::Color::Green);
 		outer[2] = sf::Vertex(inner[2]*outer_factor, sf::Color::Blue);
+
+		//board_size is edge, each coordinate can vary between 0 and board_size*2.
+		board_rep_img.create(board_size * 2, board_size * 2, sf::Color::Transparent);
+		board_rep.setSmooth(false);
+		board_rep.setRepeated(false);
+		board_rep.setSrgb(false);
+		board_rep.loadFromImage(board_rep_img);
+	}
+
+	//call whenever the board changes
+	void update(const Board& b) {
+		b.iterTiles([&](TriCoord c) {
+			auto current = board_rep_img.getPixel(c.x, c.y);
+			if (c.R) {
+				current.r = b[c].num;
+				current.g = b[c].player;
+			}
+			else {
+				current.b = b[c].num;
+				current.a = b[c].player;
+			}
+			board_rep_img.setPixel(c.x,c.y,current);
+			return true;
+		});
+
+		board_rep.update(board_rep_img);
 	}
 
 	float getRadius() const {
@@ -125,7 +161,7 @@ public:
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		shader->setUniform("hex_size", board_size);
 		shader->setUniform("selected", selected);
-		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform * getTransform(), states.texture, shader });
+		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform * getTransform(), &board_rep, shader });
 	}
 
 };
@@ -315,6 +351,7 @@ public:
 		if (reset_arrow.getBounds().contains(mouse)) {
 			board.reset();
 			bar.reset();
+			visual_board.update(board.getBoard());
 		}
 		else if (exit.getBounds().contains(mouse)) {
 			return state_transitions::ReturnToMain{};
@@ -327,7 +364,9 @@ public:
 
 	void update() override {
 		if (not board.getWinner() && (not board.getBoard().needsUpdate() || explode_timer.getElapsedTime().asSeconds() > explosion_length)) {
-			board.update();
+			if (board.update()) {
+				visual_board.update(board.getBoard());
+			}
 			explode_timer.restart();
 		}
 		visual_board.selected = board.getCurrentPlayer().selected().bary(board.getBoard().size());
@@ -799,7 +838,7 @@ public:
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, sf::ContextSettings(0,0,2));
+	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, sf::ContextSettings(0,0,2,3,2));
 
 	sf::Shader s;
 	{
@@ -807,6 +846,7 @@ int main()
 		stream.open(board_shader.data(), board_shader.size());
 		s.loadFromStream(stream, sf::Shader::Type::Fragment);
 	}
+	s.setUniform("board", sf::Shader::CurrentTexture);
 	VisualBoard::shader = &s;
 
 	window.setFramerateLimit(60);

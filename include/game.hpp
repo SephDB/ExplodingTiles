@@ -39,14 +39,17 @@ public:
 
 	std::size_t getPlayerCount() const { return players.size(); }
 
-	void update() {
+	bool update() {
 		if (board.needsUpdate()) {
 			board.update_step();
 			if (!board.needsUpdate()) nextPlayer();
+			return true;
 		}
 		else if (auto m = players[current_player]->update(); m) {
 			makeMove(*m);
+			return true;
 		}
+		return false;
 	}
 
 	void reset() {

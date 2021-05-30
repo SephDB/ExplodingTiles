@@ -44,7 +44,7 @@ vec4 tile_color(ivec3 coords, ivec2 tile_data) {
 	bool isEdge = isUp ? any(equal(coords,ivec3(0))) : any(equal(coords,ivec3(hex_size*2-1)));
 	int max = isEdge ? 1 : 2;
 	if(tile_data.x == max) {
-		return vec4(0.8,0.3,0.15,pulse_progress);
+		return vec4(0.8,0.3,0.15,mix(0.3,0.8,pulse_progress));
 	}
 	return vec4(0);
 }
@@ -184,14 +184,10 @@ public:
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		shader->setUniform("hex_size", board_size);
 		shader->setUniform("selected", selected);
-		float min = 0.3f;
-		float max = 0.9f;
-		float progress = std::sin(start_time.getElapsedTime().asSeconds() * 4);
-		progress = lerp(min, max, inverseLerp(-1.f, 1.f, progress));
+		float progress = inverseLerp(-1.f,1.f,std::sin(4*start_time.getElapsedTime().asSeconds()));
 		shader->setUniform("pulse_progress", progress);
-		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform * getTransform(), &board_rep, shader });
+		target.draw(outer, 3, sf::PrimitiveType::Triangles, { sf::BlendAlpha, states.transform * getTransform(), &board_rep, shader });
 	}
-
 };
 
 void draw_board(sf::RenderTarget& target, sf::RenderStates states, const VisualBoard& vis, const Board& b, std::span<const sf::CircleShape> players, float explosion_progress, bool draw_exploding_players = true) {

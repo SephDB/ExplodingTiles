@@ -45,8 +45,10 @@ public:
 	}
 
 	bool isEdge(TriCoord c) const {
-		auto neighbors = c.neighbors();
-		return !std::all_of(neighbors.begin(), neighbors.end(), [this](auto c) {return inBounds(c); });
+		auto b = c.bary(_size);
+		auto [min, max] = std::minmax({ b.x,b.y,b.z });
+		//Up edge triangles have a coord of 0, down edge triangles have a max coord
+		return c.R ? (max == _size * 2 - 1) : (min == 0);
 	}
 
 	int allowedPieces(TriCoord c) const {

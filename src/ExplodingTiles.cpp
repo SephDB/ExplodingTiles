@@ -22,6 +22,7 @@ const vec3 highlight_color = vec3(1,0,1);
 uniform sampler2D board;
 uniform int hex_size;
 uniform ivec3 selected;
+uniform float pulse_progress;
 
 float min3(vec3 v) {
 	return min(min(v.x,v.y),v.z);
@@ -29,6 +30,23 @@ float min3(vec3 v) {
 
 float max3(vec3 v) {
 	return max(max(v.x,v.y),v.z);
+}
+
+vec4 blend(vec4 under, vec4 over) {
+	vec4 ret;
+	ret.a = over.a + under.a*(1 - over.a);
+	ret.rgb = over.a*over.rgb + under.a*under.rgb*(1-over.a);
+	return ret;
+}
+
+vec4 tile_color(ivec3 coords, ivec2 tile_data) {
+	bool isUp = coords.x + coords.y + coords.z == (hex_size*3 - 1);
+	bool isEdge = isUp ? any(equal(coords,ivec3(0))) : any(equal(coords,ivec3(hex_size*2-1)));
+	int max = isEdge ? 1 : 2;
+	if(tile_data.x == max) {
+		return vec4(0.8,0.3,0.15,pulse_progress);
+	}
+	return vec4(0);
 }
 
 void main()
@@ -58,9 +76,8 @@ void main()
 		if(current.x + current.y + current.z == (hex_size*3 - 1)) {
 			t = tile.ba;
 		}
-		if(t.x == 1) {
-			gl_FragColor = vec4(1);
-		}
+		vec4 color = tile_color(current,t);
+		gl_FragColor = blend(color,gl_FragColor);
 	} else if(all(greaterThan(coordinates,min_bound-bound_edge)) && all(lessThan(coordinates,max_bound+bound_edge))) {
 		//Outer edge
 		vec3 distance = max(min_bound - coordinates, coordinates - max_bound);
@@ -81,11 +98,17 @@ Vec lerp(Vec a, Vec b, float val) {
 	return a + (b - a) * val;
 }
 
+template<typename Vec>
+float inverseLerp(Vec a, Vec b, Vec val) {
+	return (val - a) / (b - a);
+}
+
 class VisualBoard : public sf::Transformable, public sf::Drawable {
 	sf::Vertex outer[3]; //for drawing
 	sf::Vector2f inner[3]; //for coordinate calculations
 	sf::Texture board_rep;
 	sf::Image board_rep_img;
+	sf::Clock start_time;
 public:
 	inline static sf::Shader* shader = nullptr;
 	
@@ -161,6 +184,11 @@ public:
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		shader->setUniform("hex_size", board_size);
 		shader->setUniform("selected", selected);
+		float min = 0.3f;
+		float max = 0.9f;
+		float progress = std::sin(start_time.getElapsedTime().asSeconds() * 4);
+		progress = lerp(min, max, inverseLerp(-1.f, 1.f, progress));
+		shader->setUniform("pulse_progress", progress);
 		target.draw(outer, 3, sf::PrimitiveType::Triangles, { states.blendMode, states.transform * getTransform(), &board_rep, shader });
 	}
 
@@ -442,6 +470,7 @@ public:
 		trail.append({ { -1,0 }, transparent });
 		trail.append({ { 1,-0.25f }, transparent });
 		trail.append({ { 1,0 }, sf::Color::White });
+		board.update(b);
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {

@@ -44,7 +44,7 @@ vec4 tile_color(ivec3 coords, ivec2 tile_data) {
 	bool isEdge = isUp ? any(equal(coords,ivec3(0))) : any(equal(coords,ivec3(hex_size*2-1)));
 	int max = isEdge ? 1 : 2;
 	if(tile_data.x == max) {
-		return vec4(0.8,0.3,0.15,mix(0.3,0.8,pulse_progress));
+		return vec4(0.8,0.3,0.15,mix(0.3,1,pulse_progress));
 	}
 	return vec4(0);
 }
@@ -863,7 +863,12 @@ public:
 
 int main()
 {
-	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, sf::ContextSettings(0,0,2,3,2));
+	sf::ContextSettings settings;
+	settings.antialiasingLevel = 2;
+	settings.majorVersion = 3;
+	settings.minorVersion = 2;
+
+	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, settings);
 
 	sf::Shader s;
 	{

@@ -279,7 +279,7 @@ public:
 	void update(const Board& b) {
 		auto player_counts = b.playerTotals();
 		for (size_t p = 0; p < player_counts.size(); ++p) {
-			players[p].second = lerp<float>(players[p].second, player_counts[p], 0.3f);
+			players[p].second = lerp<float>(players[p].second, static_cast<float>(player_counts[p]), 0.3f);
 		}
 	}
 
@@ -453,7 +453,7 @@ class Logo : public sf::Transformable, public sf::Drawable {
 	std::array<sf::CircleShape, 2> players;
 	sf::VertexArray trail;
 
-	void draw_trail(sf::RenderTarget& target, sf::RenderStates states, sf::Vector2f start, float length, int angle, sf::CircleShape p) const {
+	void draw_trail(sf::RenderTarget& target, sf::RenderStates states, sf::Vector2f start, float length, float angle, sf::CircleShape p) const {
 		length /= 2;
 		sf::Transform draw;
 		draw.translate(start).scale(length,length).rotate(angle).translate(1,0);

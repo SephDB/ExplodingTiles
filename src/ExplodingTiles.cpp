@@ -14,6 +14,29 @@
 #include "shapes.hpp"
 #include "game.hpp"
 
+std::string_view default_color_shader = R"(
+#version 120
+vec4 inv_sRGB(vec4 input) {
+	vec3 rgb = abs(input.rgb);
+	vec3 low = rgb / 12.92f;
+	vec3 high = pow((rgb + 0.055f)/1.055f, vec3(2.4f));
+	bvec3 mask = lessThan(rgb,vec3(0.04045f));
+	return vec4(mix(high,low,ivec3(mask)), input.a);
+}
+
+void main()
+{
+	// transform the vertex position
+	gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+
+	// transform the texture coordinates
+	gl_TexCoord[0] = gl_TextureMatrix[0] * gl_MultiTexCoord0;
+
+	// forward the vertex color
+	gl_FrontColor = inv_sRGB(gl_Color);
+}
+)";
+
 std::string_view board_shader = R"(
 const float edge_thickness = 0.04;
 const vec3 edge_color = vec3(1);
@@ -401,13 +424,21 @@ public:
 
 		if (auto player = board.getWinner(); player) {
 			target.draw(visual_board, states);
-			target.draw(players[*player], { show_current_player });
-			target.draw(players[*player], { show_winner });
+			{
+				auto s = states;
+				s.transform *= show_current_player;
+				target.draw(players[*player], s);
+			}
+			auto s = states;
+			s.transform *= show_winner;
+			target.draw(players[*player], s);
 		}
 		else {
 			const float explosion_progress = explode_timer.getElapsedTime().asSeconds() / explosion_length;
 			draw_board(target, states, visual_board, board.getBoard(), players, explosion_progress);
-			target.draw(players[board.getCurrentPlayerNum()], { show_current_player });
+			auto s = states;
+			s.transform *= show_current_player;
+			target.draw(players[board.getCurrentPlayerNum()], s);
 		}
 
 		target.draw(reset_arrow, states);
@@ -505,8 +536,8 @@ public:
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-		target.draw(logo);
-		target.draw(play_button);
+		target.draw(logo,states);
+		target.draw(play_button,states);
 	}
 };
 
@@ -867,6 +898,7 @@ int main()
 	settings.antialiasingLevel = 2;
 	settings.majorVersion = 3;
 	settings.minorVersion = 2;
+	settings.sRgbCapable = true;
 
 	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, settings);
 
@@ -878,6 +910,13 @@ int main()
 	}
 	s.setUniform("board", sf::Shader::CurrentTexture);
 	VisualBoard::shader = &s;
+
+	sf::Shader sRGB_to_linear;
+	{
+		sf::MemoryInputStream stream;
+		stream.open(default_color_shader.data(), default_color_shader.size());
+		sRGB_to_linear.loadFromStream(stream, sf::Shader::Type::Vertex);
+	}
 
 	window.setFramerateLimit(60);
 
@@ -919,9 +958,9 @@ int main()
 
 		game->update();
 
-		window.clear(sf::Color(0x4A4AB5FF));
+		window.clear(sf::Color(0x1a1a64FF));
 
-		window.draw(*game);
+		window.draw(*game,&sRGB_to_linear);
 
 		window.display();
 	}

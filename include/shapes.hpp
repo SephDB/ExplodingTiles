@@ -29,7 +29,6 @@ sf::VertexArray circArrow(sf::Vector2f center, sf::Color color, float inner, flo
 	return ret;
 }
 
-
 sf::CircleShape playerShape(int n, sf::Color color, float size = 10) {
 	auto ret = sf::CircleShape(size, n);
 	ret.setFillColor(color);
@@ -109,5 +108,29 @@ public:
 		states.transform *= getTransform();
 		target.draw(stand, states);
 		target.draw(body, states);
+	}
+};
+
+class StarShape : public sf::Shape {
+	float inner = 0, outer = 0;
+	std::size_t num_points = 0;
+public:
+	StarShape() = default;
+
+	StarShape(float inner_radius, float outer_radius, std::size_t points) : inner(inner_radius), outer(outer_radius), num_points(points) {
+		update();
+	}
+
+	std::size_t getPointCount() const override {
+		return num_points * 2;
+	}
+
+	sf::Vector2f getPoint(std::size_t index) const override {
+		const float tau = 2 * std::acosf(-1);
+		const float increment = tau / (num_points*2);
+		const float angle = increment * index - tau/4;
+		sf::Vector2f ret{ std::cos(angle),std::sin(angle) };
+		ret *= (index % 2 == 0) ? outer : inner;
+		return ret;
 	}
 };

@@ -541,6 +541,75 @@ public:
 	}
 };
 
+class AISelector : public sf::Transformable, public sf::Drawable {
+	PlayerType selected = PlayerType::AIRando;
+	std::array<StarShape, 3> stars;
+	AIPlayerShape shape;
+
+	StarShape make_star(float size) {
+		StarShape ret(size / 2, size, 5);
+		ret.setOutlineColor(sf::Color::Black);
+		ret.setOutlineThickness(1);
+		ret.setFillColor(sf::Color::Transparent);
+		return ret;
+	}
+
+	void updateStars() {
+		for (auto& s : stars) {
+			s.setFillColor(sf::Color::Transparent);
+		}
+		auto fill_color = sf::Color::Yellow;
+		switch (selected) {
+		case PlayerType::AISmart:
+			stars[0].setFillColor(fill_color);
+			[[fallthrough]];
+		case PlayerType::AIGreedy:
+			stars[1].setFillColor(fill_color);
+			[[fallthrough]];
+		case PlayerType::AIRando:
+			stars[2].setFillColor(fill_color);
+			break;
+		default:
+			break;
+		}
+	}
+
+public:
+	AISelector(float size) : shape(size) {
+		std::ranges::fill(stars, make_star(size / 8));
+		auto loc = shape.getBounds();
+		for (auto& star : stars) {
+			star.setPosition(loc.width + size / 8 + size / 10, loc.top + size / 8);
+			loc.top += size / 4 + 5;
+		}
+		updateStars();
+	}
+
+	sf::FloatRect getBounds() const {
+		auto shaperect = shape.getBounds();
+		auto starrect = stars[0].getGlobalBounds();
+		return getTransform().transformRect(sf::FloatRect(shaperect.left,shaperect.top,(starrect.left+starrect.width)-shaperect.left, shaperect.height));
+	}
+
+	PlayerType onMouseClick(sf::Vector2f mouse) {
+		mouse = getInverseTransform().transformPoint(mouse);
+		auto clicked = std::ranges::find_if(stars, [mouse](auto& s) {return s.getGlobalBounds().contains(mouse); });
+		if (clicked != stars.end()) {
+			selected = static_cast<PlayerType>(3 - (clicked - stars.begin()));
+			updateStars();
+		}
+		return selected;
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		target.draw(shape, states);
+		for (auto& s : stars) {
+			target.draw(s, states);
+		}
+	}
+};
+
 template<class ShapeType>
 class RectSelector : public sf::Drawable {
 	std::vector<ShapeType> shapes;
@@ -681,7 +750,7 @@ public:
 class PlayerSelector : public sf::Transformable, public sf::Drawable {
 	sf::RectangleShape outline;
 	HumanPlayer human_shape;
-	AIPlayerShape AI_shape;
+	AISelector AI_shape;
 	sf::CircleShape player_shape;
 	ShapeSelector shape_selector;
 	ColorSelector color_selector;
@@ -713,7 +782,7 @@ public:
 		outline.setOutlineThickness(2.f);
 
 		human_shape.setPosition(0, size.y - human_shape.getBounds().height - 10);
-		AI_shape.setPosition(human_shape.getPosition() + sf::Vector2f(size.x / 2, 0));
+		AI_shape.setPosition(sf::Vector2f(size.x - AI_shape.getBounds().width - 10, human_shape.getPosition().y));
 		selector.setFillColor(sf::Color::Transparent);
 		selector.setOutlineColor(sf::Color::White);
 		selector.setOutlineThickness(2.f);
@@ -732,7 +801,7 @@ public:
 			refresh();
 		}
 		else if (AI_shape.getBounds().contains(mouse)) {
-			player.playerBehavior = PlayerType::AIRando;
+			player.playerBehavior = AI_shape.onMouseClick(mouse);
 			refresh();
 		}
 		else if (shape_selector.getBounds().contains(mouse)) {

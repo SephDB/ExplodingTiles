@@ -16,12 +16,12 @@
 
 std::string_view default_color_shader = R"(
 #version 120
-vec4 inv_sRGB(vec4 input) {
-	vec3 rgb = abs(input.rgb);
+vec4 inv_sRGB(vec4 c) {
+	vec3 rgb = c.rgb;
 	vec3 low = rgb / 12.92f;
 	vec3 high = pow((rgb + 0.055f)/1.055f, vec3(2.4f));
 	bvec3 mask = lessThan(rgb,vec3(0.04045f));
-	return vec4(mix(high,low,ivec3(mask)), input.a);
+	return vec4(mix(high,low,ivec3(mask)), c.a);
 }
 
 void main()

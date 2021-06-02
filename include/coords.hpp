@@ -7,7 +7,7 @@
 struct TriCoord {
 	TriCoord() = default;
 	TriCoord(sf::Vector3i bary, int hex_size) : x(bary.x), y(bary.y), R(bary.x + bary.y + bary.z == hex_size * 3 - 2) {}
-	TriCoord(int x, int y, bool R) : x(x), y(y), R(R) {}
+	constexpr TriCoord(int x, int y, bool R) : x(x), y(y), R(R) {}
 	int x, y;
 	bool R;
 

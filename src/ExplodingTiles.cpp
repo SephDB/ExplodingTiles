@@ -8,6 +8,7 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 
+#include "vectorops.hpp"
 #include "coords.hpp"
 #include "board.hpp"
 #include "player.hpp"
@@ -111,20 +112,6 @@ void main()
 	}
 }
 )";
-
-float dot(sf::Vector2f a, sf::Vector2f b) {
-	return a.x * b.x + a.y * b.y;
-}
-
-template<typename Vec>
-Vec lerp(Vec a, Vec b, float val) {
-	return a + (b - a) * val;
-}
-
-template<typename Vec>
-float inverseLerp(Vec a, Vec b, Vec val) {
-	return (val - a) / (b - a);
-}
 
 class VisualBoard : public sf::Transformable, public sf::Drawable {
 	sf::Vertex outer[3]; //for drawing

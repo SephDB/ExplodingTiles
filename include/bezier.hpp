@@ -96,7 +96,7 @@ class PolyBezier {
 		}
 	};
 
-	std::vector<sf::Vector2f> control_points; //currently grouped by three, will expand later
+	std::vector<sf::Vector2f> control_points;
 	std::vector<ErasedSpline> splines;
 
 	std::size_t num_curves() const {

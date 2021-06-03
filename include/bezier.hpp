@@ -52,6 +52,8 @@ class PolyBezier {
 		//Construct the spline starting at points[start], get value/tangent at t
 		virtual sf::Vector2f value(float t, std::span<const sf::Vector2f> points) const = 0;
 		virtual sf::Vector2f tangent(float t, std::span<const sf::Vector2f> points) const = 0;
+		virtual void clone(std::byte* loc) const = 0;
+		virtual ~GenericSpline() = default;
 	};
 
 	template<std::size_t Degree>
@@ -74,21 +76,27 @@ class PolyBezier {
 		sf::Vector2f tangent(float t, std::span<const sf::Vector2f> points) const override {
 			return get(points).tangent(t);
 		}
+
+		void clone(std::byte* loc) const override {
+			new(loc) ConcreteSpline(*this);
+		}
 	};
 
 	struct ErasedSpline {
 		//Using GenericSpline as size and alignment since ConcreteSpline has no additional data
-		std::aligned_storage_t<sizeof(GenericSpline), alignof(GenericSpline)> storage;
+		alignas(GenericSpline) std::byte storage[sizeof(GenericSpline)];
 
 		template<std::size_t Degree>
 		ErasedSpline(ConcreteSpline<Degree> s) {
-			new(&storage) ConcreteSpline<Degree>(s);
+			new(storage) ConcreteSpline<Degree>(s);
 		}
 
-		//default copy and move ops do the right thing, copying the vtable pointer and size member
+		ErasedSpline(const ErasedSpline& o) {
+			o.get().clone(storage);
+		}
 
 		const GenericSpline& get() const {
-			return *reinterpret_cast<const GenericSpline*>(&storage);
+			return *std::launder(reinterpret_cast<const GenericSpline*>(storage));
 		}
 
 		~ErasedSpline() {

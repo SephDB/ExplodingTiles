@@ -4,47 +4,68 @@
 #include <SFML/System/Vector2.hpp>
 #include "vectorops.hpp"
 
-struct CubeSpline {
-	//first point is at 0,0
-	std::array<sf::Vector2f, 3> control_points;
+template<std::size_t Degree>
+struct Bezier {
+	//first control point fixed to origin
+	std::array<sf::Vector2f, Degree> points;
 
 	sf::Vector2f value(float t) const {
-		auto inter = [t](auto a, auto b) {return lerp(a, b, t); };
-		std::array<sf::Vector2f, 3> first_order = {
-			inter(sf::Vector2f(0,0),control_points[0]),
-			inter(control_points[0],control_points[1]),
-			inter(control_points[1],control_points[2])
-		};
-		auto second_a = inter(first_order[0], first_order[1]);
-		auto second_b = inter(first_order[1], first_order[2]);
-		return inter(second_a, second_b);
+		Bezier<Degree - 1> lowered;
+		sf::Vector2f offset = points[0] * t;
+		for (std::size_t i = 0; i < Degree - 1; ++i) {
+			lowered.points[i] = lerp(points[i], points[i + 1], t) - offset;
+		}
+		return lowered.value(t) + offset;
 	}
 
 	sf::Vector2f tangent(float t) const {
-		std::array<sf::Vector2f, 3> quad_spline_derivative = {
-			3.f * control_points[0],
-			3.f * (control_points[1] - control_points[0]),
-			3.f * (control_points[2] - control_points[1])
-		};
-		auto inter = [t](auto a, auto b) {return lerp(a, b, t); };
-		auto second_a = inter(quad_spline_derivative[0], quad_spline_derivative[1]);
-		auto second_b = inter(quad_spline_derivative[1], quad_spline_derivative[2]);
-		return normalized(inter(second_a, second_b));
+		Bezier<Degree - 1> lowered;
+		const float order_f = static_cast<float>(Degree);
+		sf::Vector2f offset = points[0] * order_f;
+		for (std::size_t i = 0; i < Degree - 1; ++i) {
+			lowered.points[i] = (points[i + 1] - points[i]) * order_f - offset;
+		}
+		return normalized(lowered.value(t) + offset);
 	}
 };
+
+template<>
+struct Bezier<1> {
+	std::array<sf::Vector2f, 1> points;
+
+	sf::Vector2f value(float t) const {
+		return points[0] * t;
+	}
+};
+
+using CubeSpline = Bezier<3>;
 
 /**
 * Stitches CubeSplines together by their endpoints, properly aligning the tangent values for smooth interpolation
 */
 class PolyCubeBezier {
-	std::vector<CubeSpline> splines;
-	std::vector<sf::Transform> alignment;
+	std::vector<sf::Vector2f> control_points; //currently grouped by three, will expand later
+
+	std::pair<sf::Vector2f,CubeSpline> get(std::size_t n) const {
+		CubeSpline ret;
+		sf::Vector2f offset{};
+		if (n > 0) {
+			offset = control_points[n * 3 - 1];
+		}
+		std::transform(control_points.begin() + n * 3, control_points.begin() + (n + 1) * 3, ret.points.begin(), [&](auto point) {return point - offset; });
+		return { offset,ret };
+	}
+
+	std::size_t num_curves() const {
+		return control_points.size() / 3;
+	}
+
 public:
-	PolyCubeBezier(CubeSpline s) : splines{ s }, alignment{ sf::Transform() } {
+	PolyCubeBezier(CubeSpline s) : control_points(s.points.begin(),s.points.end()) {
 	}
 
 	PolyCubeBezier& addSpline(CubeSpline s) {
-		auto end_tangent = splines.back().tangent(1);
+		auto end_tangent = tangent(1);
 		auto start_tangent = s.tangent(0);
 		auto cos = dot(end_tangent, start_tangent);
 		auto sin = (end_tangent.x * start_tangent.y - end_tangent.y * start_tangent.x);
@@ -52,30 +73,33 @@ public:
 		sf::Transform rot = sf::Transform(cos,-sin,0,
 		                                  sin,cos,0,
 		                                  0,0,1);
-		sf::Transform current = alignment.back();
-		current.translate(alignment.back().transformPoint(splines.back().value(1))).combine(rot);
-		splines.push_back(s);
-		alignment.push_back(current);
+
+		sf::Vector2f offset = control_points.back();
+
+		for (const auto& p : s.points) {
+			control_points.push_back(rot.transformPoint(p) + offset);
+		}
 		
 		return *this;
 	}
 
 	sf::Vector2f value(float t) const {
-		int n = static_cast<int>(t * splines.size());
-		if (n == splines.size()) n--;
+		int n = static_cast<int>(t * num_curves());
+		if (n == num_curves()) n--;
 
-		float t2 = inverseLerp<float>(n,n+1,t*splines.size());
+		t = inverseLerp<float>(n, n + 1, t * num_curves());
 
-		return alignment[n].transformPoint(splines[n].value(t2));
+		auto [offset, spline] = get(n);
+
+		return spline.value(t) + offset;
 	}
 
 	sf::Vector2f tangent(float t) const {
-		int n = static_cast<int>(t * splines.size());
-		if (n == splines.size()) n--;
-		auto translation = alignment[n].transformPoint(sf::Vector2f(0,0));
+		int n = static_cast<int>(t * num_curves());
+		if (n == num_curves()) n--;
 
-		t = inverseLerp<float>(n, n + 1, t*splines.size());
-		return alignment[n].transformPoint(splines[n].tangent(t)) - translation;
+		t = inverseLerp<float>(n, n + 1, t * num_curves());
+		return get(n).second.tangent(t);
 	}
 
 };

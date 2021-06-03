@@ -40,31 +40,86 @@ struct Bezier<1> {
 
 using CubeSpline = Bezier<3>;
 
-/**
-* Stitches CubeSplines together by their endpoints, properly aligning the tangent values for smooth interpolation
-*/
-class PolyCubeBezier {
-	std::vector<sf::Vector2f> control_points; //currently grouped by three, will expand later
 
-	std::pair<sf::Vector2f,CubeSpline> get(std::size_t n) const {
-		CubeSpline ret;
-		sf::Vector2f offset{};
-		if (n > 0) {
-			offset = control_points[n * 3 - 1];
+/**
+* Stitches Beziers together by their endpoints, properly aligning the tangent values for smooth interpolation
+*/
+class PolyBezier {
+	//Helper classes
+	struct GenericSpline {
+		GenericSpline(std::size_t s) : start(s) {}
+		std::size_t start;
+		//Construct the spline starting at points[start], get value/tangent at t
+		virtual sf::Vector2f value(float t, std::span<const sf::Vector2f> points) const = 0;
+		virtual sf::Vector2f tangent(float t, std::span<const sf::Vector2f> points) const = 0;
+	};
+
+	template<std::size_t Degree>
+	struct ConcreteSpline final : GenericSpline {
+		ConcreteSpline(std::size_t start) : GenericSpline(start) {}
+
+		Bezier<Degree> get(std::span<const sf::Vector2f> points) const {
+			sf::Vector2f offset = points[start];
+			Bezier<Degree> b;
+			for (std::size_t i = 0; i < Degree; ++i) {
+				b.points[i] = points[start + i + 1] - offset;
+			}
+			return b;
 		}
-		std::transform(control_points.begin() + n * 3, control_points.begin() + (n + 1) * 3, ret.points.begin(), [&](auto point) {return point - offset; });
-		return { offset,ret };
-	}
+
+		sf::Vector2f value(float t, std::span<const sf::Vector2f> points) const override {
+			return get(points).value(t) + points[start];
+		}
+
+		sf::Vector2f tangent(float t, std::span<const sf::Vector2f> points) const override {
+			return get(points).tangent(t);
+		}
+	};
+
+	struct ErasedSpline {
+		//Using GenericSpline as size and alignment since ConcreteSpline has no additional data
+		std::aligned_storage_t<sizeof(GenericSpline), alignof(GenericSpline)> storage;
+
+		template<std::size_t Degree>
+		ErasedSpline(ConcreteSpline<Degree> s) {
+			new(&storage) ConcreteSpline<Degree>(s);
+		}
+
+		//default copy and move ops do the right thing, copying the vtable pointer and size member
+
+		const GenericSpline& get() const {
+			return *reinterpret_cast<const GenericSpline*>(&storage);
+		}
+
+		~ErasedSpline() {
+			get().~GenericSpline();
+		}
+	};
+
+	std::vector<sf::Vector2f> control_points; //currently grouped by three, will expand later
+	std::vector<ErasedSpline> splines;
 
 	std::size_t num_curves() const {
-		return control_points.size() / 3;
+		return splines.size();
+	}
+
+	std::pair<std::size_t, float> get_loc(float t) const {
+		std::size_t n = static_cast<std::size_t>(t * num_curves());
+		if (n == num_curves()) n--;
+
+		t = inverseLerp<float>(n, n + 1, t * num_curves());
+		return { n,t };
 	}
 
 public:
-	PolyCubeBezier(CubeSpline s) : control_points(s.points.begin(),s.points.end()) {
+	template<std::size_t Degree>
+	PolyBezier(Bezier<Degree> s) : control_points(s.points.begin(), s.points.end()) {
+		control_points.insert(control_points.begin(), sf::Vector2f()); //insert 0,0
+		splines.emplace_back(ConcreteSpline<Degree>(0));
 	}
 
-	PolyCubeBezier& addSpline(CubeSpline s) {
+	template<std::size_t Degree>
+	PolyBezier& addSpline(Bezier<Degree> s) {
 		auto end_tangent = tangent(1);
 		auto start_tangent = s.tangent(0);
 		auto cos = dot(end_tangent, start_tangent);
@@ -76,32 +131,26 @@ public:
 
 		sf::Vector2f offset = control_points.back();
 
+		splines.emplace_back(ConcreteSpline<Degree>{control_points.size() - 1});
+
 		for (const auto& p : s.points) {
 			control_points.push_back(rot.transformPoint(p) + offset);
 		}
-		
+
 		return *this;
 	}
 
 	sf::Vector2f value(float t) const {
-		int n = static_cast<int>(t * num_curves());
-		if (n == num_curves()) n--;
+		auto [n, t2] = get_loc(t);
 
-		t = inverseLerp<float>(n, n + 1, t * num_curves());
-
-		auto [offset, spline] = get(n);
-
-		return spline.value(t) + offset;
+		return splines[n].get().value(t2,control_points);
 	}
 
 	sf::Vector2f tangent(float t) const {
-		int n = static_cast<int>(t * num_curves());
-		if (n == num_curves()) n--;
+		auto [n, t2] = get_loc(t);
 
-		t = inverseLerp<float>(n, n + 1, t * num_curves());
-		return get(n).second.tangent(t);
+		return splines[n].get().tangent(t2,control_points);
 	}
-
 };
 
 

@@ -38,6 +38,7 @@ struct Bezier<1> {
 	}
 };
 
+using QuadSpline = Bezier<2>;
 using CubeSpline = Bezier<3>;
 
 

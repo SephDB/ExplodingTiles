@@ -3,6 +3,7 @@
 #include <cmath>
 #include <SFML/Graphics/VertexArray.hpp>
 
+#include "bezier.hpp"
 
 sf::VertexArray circArrow(sf::Vector2f center, sf::Color color, float inner, float outer, float pointextra, int num = 50) {
 	const float tau = 2 * std::acosf(-1);
@@ -132,5 +133,39 @@ public:
 		sf::Vector2f ret{ std::cos(angle),std::sin(angle) };
 		ret *= (index % 2 == 0) ? outer : inner;
 		return ret;
+	}
+};
+
+class QuestionMark : public sf::Drawable, public sf::Transformable {
+	sf::VertexArray arc;
+	sf::Transform arc_offset;
+	sf::CircleShape dot;
+public:
+	QuestionMark(float size) : dot(size / 10) {
+		float bottom_height = size / 2;
+		float top_height = size / 3;
+		Bezier<3> curve{ {sf::Vector2f(0,-bottom_height/2),sf::Vector2f(bottom_height/2,-bottom_height/2),sf::Vector2f(bottom_height/2,-bottom_height)} };
+		Bezier<3> curve2{ {sf::Vector2f(0,top_height), sf::Vector2f(bottom_height,top_height), sf::Vector2f(bottom_height,0)} };
+
+		arc = curve_to_strip(PolyBezier(curve).addSpline(curve2), size / 10);
+
+		auto arc_loc = arc.getBounds();
+
+		arc_offset = sf::Transform().translate(-arc_loc.left,-arc_loc.top);
+
+		dot.setPosition(bottom_height/2, arc_loc.height + dot.getRadius() * 1.2f);
+	}
+
+	sf::FloatRect getBounds() const {
+		auto rect = arc.getBounds();
+		rect.height += dot.getRadius() * 3;
+		return (getTransform() * arc_offset).transformRect(rect);
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		target.draw(dot, states);
+		states.transform *= arc_offset;
+		target.draw(arc, states);
 	}
 };

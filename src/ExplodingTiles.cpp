@@ -217,7 +217,9 @@ void draw_board(sf::RenderTarget& target, sf::RenderStates states, const VisualB
 
 		states.transform.translate(center);
 
-		const sf::CircleShape& circle = players[s.player];
+		sf::CircleShape circle = players[s.player];
+		const float size_diff = vis.getTriRadius() / circle.getRadius();
+		circle.setScale(size_diff, size_diff);
 
 		if (s.num > b.allowedPieces(c)) {
 			auto explode_state = states;
@@ -308,7 +310,8 @@ namespace state_transitions {
 	};
 	struct ReturnToMain {};
 	struct OpenPlayerSelect {};
-	using StateChangeEvent = std::variant<std::monostate, OpenPlayerSelect, StartGame, ReturnToMain>;
+	struct OpenTutorial {};
+	using StateChangeEvent = std::variant<std::monostate, OpenPlayerSelect, StartGame, ReturnToMain, OpenTutorial>;
 }
 
 class State : public sf::Drawable {
@@ -498,13 +501,17 @@ public:
 
 class MainMenu : public State {
 	sf::CircleShape play_button;
+	QuestionMark tutorial;
 	Logo logo;
 public:
-	MainMenu(sf::Vector2f dims) : play_button(dims.x/20,3), logo(dims.y/2.4f) {
+	MainMenu(sf::Vector2f dims) : play_button(dims.x / 20, 3), tutorial(dims.x/15), logo(dims.y / 2.4f) {
 		play_button.setFillColor(sf::Color::Yellow);
 		play_button.setRotation(-30);
-		play_button.setOrigin(sf::Vector2f(dims.x / 20, dims.x / 20));
-		play_button.setPosition(dims.x / 2, dims.y * 4/5);
+		play_button.setOrigin(sf::Vector2f(play_button.getRadius(), play_button.getRadius()));
+		play_button.setPosition(dims.x / 3, dims.y * 4/5);
+		tutorial.setOrigin(tutorial.getBounds().width / 2, tutorial.getBounds().height / 2);
+		tutorial.setPosition(dims.x * 2 / 3, play_button.getPosition().y);
+
 		logo.setPosition(dims.x/2,dims.y / 4 + 10);
 	}
 
@@ -514,6 +521,9 @@ public:
 	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
 		if (play_button.getGlobalBounds().contains(mouse)) {
 			return state_transitions::OpenPlayerSelect{};
+		}
+		else if (tutorial.getBounds().contains(mouse)) {
+			return state_transitions::OpenTutorial{};
 		}
 		return {};
 	}
@@ -525,6 +535,7 @@ public:
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		target.draw(logo,states);
 		target.draw(play_button,states);
+		target.draw(tutorial, states);
 	}
 };
 
@@ -948,6 +959,87 @@ public:
 
 };
 
+struct Move {
+	TriCoord coord;
+	int player;
+};
+
+using SelectTile = TriCoord;
+
+using AnimMove = std::variant<SelectTile, Move>;
+
+class BoardAnimation : public sf::Transformable, public sf::Drawable {
+	Board current;
+	VisualBoard visual_board;
+
+	sf::Clock timer;
+
+	std::span<const Move> setup;
+	std::span<const AnimMove> moves;
+
+	std::span<const sf::CircleShape> player_shapes;
+
+public:
+	BoardAnimation(std::span<const sf::CircleShape> players, float radius, int board_size, std::span<const Move> setup, std::span<const AnimMove> moves)
+		: current(board_size), visual_board(radius, board_size), setup(setup), moves(moves), player_shapes(players) {
+		reset();
+	}
+
+	void reset() {
+		current = { current.size() };
+		for (auto& m : setup) {
+			current.incTile(m.coord, m.player);
+		}
+		visual_board.update(current);
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		states.transform *= getTransform();
+		draw_board(target, states, visual_board, current, player_shapes, timer.getElapsedTime().asSeconds() / explosion_length);
+	}
+};
+
+static constexpr std::array<Move, 1> tut1_moves{
+	{{TriCoord(1,0,true),0}}
+};
+
+class TutorialState : public State {
+	CrossShape exit;
+	std::array<sf::CircleShape,2> players = { playerShape(3,sf::Color(colors[0])), playerShape(5,sf::Color(colors[1])) };
+	BoardAnimation anim;
+public:
+	TutorialState(sf::Vector2f dims) : exit(sf::Color::Red, 40), anim(players, dims.y / 4, 1, tut1_moves, {}) {
+		exit.setPosition(60, 60);
+		exit.setRotation(45);
+		anim.setPosition(dims / 2.f);
+	}
+
+	void mouseMove(sf::Vector2f mouse) override {
+		if (exit.getBounds().contains(mouse)) {
+			exit.setColor(sf::Color::Yellow);
+		}
+		else {
+			exit.setColor(sf::Color::Red);
+		}
+	}
+
+	state_transitions::StateChangeEvent onClick(sf::Vector2f mouse) override {
+		if (exit.getBounds().contains(mouse)) {
+			return state_transitions::ReturnToMain{};
+		}
+		return {};
+	}
+
+	void update() override {
+
+	}
+
+	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
+		target.draw(exit, states);
+		target.draw(anim, states);
+	}
+};
+
 int main()
 {
 	sf::ContextSettings settings;
@@ -993,6 +1085,9 @@ int main()
 				std::visit(overloaded{
 						[&](state_transitions::OpenPlayerSelect) {
 							game = std::make_unique<PlayerSelect>(sf::Vector2f(800,600));
+						},
+						[&](state_transitions::OpenTutorial) {
+							game = std::make_unique<TutorialState>(sf::Vector2f(800,600));
 						},
 						[&](state_transitions::StartGame& g) {
 							game = std::make_unique<GameState>(sf::Vector2f(400,300),250.f,g);

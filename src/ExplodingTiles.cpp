@@ -964,10 +964,6 @@ struct Move {
 	int player;
 };
 
-using SelectTile = TriCoord;
-
-using AnimMove = std::variant<SelectTile, Move>;
-
 class BoardAnimation : public sf::Transformable, public sf::Drawable {
 	Board current;
 	VisualBoard visual_board;
@@ -975,13 +971,32 @@ class BoardAnimation : public sf::Transformable, public sf::Drawable {
 	sf::Clock timer;
 
 	std::span<const Move> setup;
-	std::span<const AnimMove> moves;
+	std::span<const Move> moves;
+
+	decltype(moves.begin()) current_move;
 
 	std::span<const sf::CircleShape> player_shapes;
 
+	static constexpr float time_between_moves = 0.8f;
+	static constexpr float time_for_mouse = 0.6f;
+	static constexpr float click_duration = 0.1f;
+
+	sf::CircleShape mouse;
+	sf::Vector2f mouse_diff;
+	bool click = false;
+
+	void setMouseFromSelected() {
+		mouse.setPosition(visual_board.baryToScreen(TriCoord(visual_board.selected, visual_board.board_size).tri_center(visual_board.board_size)));
+		mouse_diff = {};
+	}
+
 public:
-	BoardAnimation(std::span<const sf::CircleShape> players, float radius, int board_size, std::span<const Move> setup, std::span<const AnimMove> moves)
-		: current(board_size), visual_board(radius, board_size), setup(setup), moves(moves), player_shapes(players) {
+	BoardAnimation(std::span<const sf::CircleShape> players, float radius, int board_size, std::span<const Move> setup, std::span<const Move> moves)
+		: current(board_size), visual_board(radius, board_size), setup(setup), moves(moves), player_shapes(players), mouse(radius / 20) {
+		mouse.setFillColor(sf::Color::Red);
+		mouse.setOutlineColor(sf::Color::White);
+		mouse.setOrigin(mouse.getRadius(), mouse.getRadius());
+		mouse.setOutlineThickness(3);
 		reset();
 	}
 
@@ -991,24 +1006,80 @@ public:
 			current.incTile(m.coord, m.player);
 		}
 		visual_board.update(current);
+		current_move = moves.begin();
+		
+		if (setup.size() > 0) visual_board.selected = setup.back().coord.bary(visual_board.board_size);
+		else visual_board.selected = {};
+		setMouseFromSelected();
+	}
+
+	void update() {
+		const float elapsed = timer.getElapsedTime().asSeconds();
+		sf::Vector2f current_mouse_pos = mouse.getPosition() + elapsed / time_for_mouse * mouse_diff;
+		visual_board.selected = visual_board.mouseToBoard(current_mouse_pos).bary(visual_board.board_size);
+		if (click && elapsed > click_duration) {
+			click = false;
+			mouse.setScale(1, 1);
+		}
+		if (current.needsUpdate()) {
+			if (elapsed > explosion_length) {
+				current.update_step();
+				visual_board.update(current);
+				timer.restart();
+			}
+		}
+		else if (elapsed > time_between_moves) {
+			if (current_move == moves.end()) {
+				reset();
+			}
+			else {
+				Move m = *current_move;
+				if (visual_board.selected != m.coord.bary(visual_board.board_size)) {
+					mouse_diff = visual_board.baryToScreen(m.coord.tri_center(visual_board.board_size)) - mouse.getPosition();
+				}
+				else {
+					current.incTile(m.coord, m.player);
+					visual_board.update(current);
+					click = true;
+					mouse.setScale(0.4f, 0.4f);
+					++current_move;
+				}
+			}
+			timer.restart();
+		}
+		else if (elapsed > time_for_mouse) {
+			setMouseFromSelected();
+		}
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		states.transform *= getTransform();
-		draw_board(target, states, visual_board, current, player_shapes, timer.getElapsedTime().asSeconds() / explosion_length);
+		const float elapsed = timer.getElapsedTime().asSeconds();
+		draw_board(target, states, visual_board, current, player_shapes, elapsed / explosion_length);
+		states.transform *= sf::Transform().translate(elapsed / time_for_mouse * mouse_diff);
+		target.draw(mouse, states);
 	}
 };
 
-static constexpr std::array<Move, 1> tut1_moves{
-	{{TriCoord(1,0,true),0}}
+namespace tutorial_detail {
+	static constexpr std::array<Move, 0> empty{};
+}
+
+static constexpr auto tut1_setup = tutorial_detail::empty;
+static constexpr auto tut1_moves = std::array{
+	Move{ TriCoord(0,1,true),0 },
+	Move{ TriCoord(0,0,true),1 },
+	Move{ TriCoord(0,1,true),0 }
 };
+
+
 
 class TutorialState : public State {
 	CrossShape exit;
 	std::array<sf::CircleShape,2> players = { playerShape(3,sf::Color(colors[0])), playerShape(5,sf::Color(colors[1])) };
 	BoardAnimation anim;
 public:
-	TutorialState(sf::Vector2f dims) : exit(sf::Color::Red, 40), anim(players, dims.y / 4, 1, tut1_moves, {}) {
+	TutorialState(sf::Vector2f dims) : exit(sf::Color::Red, 40), anim(players, dims.y / 4, 1, tut1_setup, tut1_moves) {
 		exit.setPosition(60, 60);
 		exit.setRotation(45);
 		anim.setPosition(dims / 2.f);
@@ -1031,7 +1102,7 @@ public:
 	}
 
 	void update() override {
-
+		anim.update();
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {

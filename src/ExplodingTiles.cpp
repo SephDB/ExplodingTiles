@@ -899,7 +899,7 @@ public:
 		increase_board.setOrigin(increase_board.getRadius(), increase_board.getRadius());
 
 		decrease_board = increase_board;
-		decrease_board.setRotation(180);
+		decrease_board.rotate(180);
 		
 		const float dist = dims.y / 5 + 2*increase_board.getRadius();
 
@@ -992,11 +992,11 @@ class BoardAnimation : public sf::Transformable, public sf::Drawable {
 
 public:
 	BoardAnimation(std::span<const sf::CircleShape> players, float radius, int board_size, std::span<const Move> setup, std::span<const Move> moves)
-		: current(board_size), visual_board(radius, board_size), setup(setup), moves(moves), player_shapes(players), mouse(radius / 20) {
+		: current(board_size), visual_board(radius, board_size), setup(setup), moves(moves), player_shapes(players), mouse(radius / 30) {
 		mouse.setFillColor(sf::Color::Red);
 		mouse.setOutlineColor(sf::Color::White);
 		mouse.setOrigin(mouse.getRadius(), mouse.getRadius());
-		mouse.setOutlineThickness(3);
+		mouse.setOutlineThickness(2.5f);
 		reset();
 	}
 
@@ -1011,6 +1011,7 @@ public:
 		if (setup.size() > 0) visual_board.selected = setup.back().coord.bary(visual_board.board_size);
 		else visual_board.selected = {};
 		setMouseFromSelected();
+		timer.restart();
 	}
 
 	void update() {
@@ -1072,17 +1073,44 @@ static constexpr auto tut1_moves = std::array{
 	Move{ TriCoord(0,1,true),0 }
 };
 
-
+static constexpr auto tut2_setup = std::array{
+	Move{TriCoord(1,1,false),0 },
+	Move{TriCoord(0,2,false),1 },
+	Move{TriCoord(0,2,true),0}, //taken over by yellow
+	Move{TriCoord(0,0,true),0} //start out-of-bounds
+};
+static constexpr auto tut2_moves = std::array{
+	Move{TriCoord(1,1,false),0},
+	Move{TriCoord(0,2,false),1},
+	Move{TriCoord(1,1,false),0}
+};
 
 class TutorialState : public State {
 	CrossShape exit;
 	std::array<sf::CircleShape,2> players = { playerShape(3,sf::Color(colors[0])), playerShape(5,sf::Color(colors[1])) };
-	BoardAnimation anim;
+	sf::CircleShape prev_tut,next_tut;
+	std::vector<BoardAnimation> anims;
+	std::size_t current = 0;
 public:
-	TutorialState(sf::Vector2f dims) : exit(sf::Color::Red, 40), anim(players, dims.y / 4, 1, tut1_setup, tut1_moves) {
+	TutorialState(sf::Vector2f dims) : exit(sf::Color::Red, 40), next_tut(dims.y/15,3) {
 		exit.setPosition(60, 60);
 		exit.setRotation(45);
-		anim.setPosition(dims / 2.f);
+
+		next_tut.setFillColor(sf::Color::Yellow);
+		next_tut.setOrigin(next_tut.getRadius(), next_tut.getRadius()*9/4);
+		next_tut.setScale(1, 1.2f);
+		next_tut.setPosition(dims.x/2,dims.y - next_tut.getRadius()*2);
+		next_tut.rotate(90);
+
+		prev_tut = next_tut;
+		prev_tut.rotate(180);
+
+		auto add_anim = [&](int board_size, std::span<const Move> setup, std::span<const Move> moves) {
+			anims.emplace_back(players, dims.y / 4, board_size, setup, moves);
+			anims.back().setPosition(dims / 2.f);
+		};
+		add_anim(1, tut1_setup, tut1_moves);
+		add_anim(2, tut2_setup, tut2_moves);
 	}
 
 	void mouseMove(sf::Vector2f mouse) override {
@@ -1098,16 +1126,26 @@ public:
 		if (exit.getBounds().contains(mouse)) {
 			return state_transitions::ReturnToMain{};
 		}
+		else if (prev_tut.getGlobalBounds().contains(mouse)) {
+			current = (current == 0) ? anims.size() - 1 : (current - 1);
+			anims[current].reset();
+		}
+		else if (next_tut.getGlobalBounds().contains(mouse)) {
+			current = (current + 1) % anims.size();
+			anims[current].reset();
+		}
 		return {};
 	}
 
 	void update() override {
-		anim.update();
+		anims[current].update();
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
 		target.draw(exit, states);
-		target.draw(anim, states);
+		target.draw(anims[current], states);
+		target.draw(prev_tut, states);
+		target.draw(next_tut, states);
 	}
 };
 

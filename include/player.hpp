@@ -202,7 +202,7 @@ namespace AI {
 
 	Filter auto biggestExplosion = filterIncludeMoves(explodingFilter) | maxFitness([](auto&, int, int num) {return num; });
 
-	Filter auto maxGain = filterIncludeMoves(explodingFilter) | maxFitness([](auto& board, int player, int) {
+	Filter auto maxGain = maxFitness([](auto& board, int player, int) {
 		return board.playerTotals()[player];
 	});
 

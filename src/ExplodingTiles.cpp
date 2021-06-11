@@ -39,6 +39,8 @@ void main()
 )";
 
 std::string_view board_shader = R"(
+#version 130
+
 const float edge_thickness = 0.04;
 const vec3 edge_color = vec3(1);
 const vec3 highlight_color = vec3(1,0,1);
@@ -58,8 +60,8 @@ float max3(vec3 v) {
 
 vec4 blend(vec4 under, vec4 over) {
 	vec4 ret;
-	ret.a = over.a + under.a*(1 - over.a);
-	ret.rgb = over.a*over.rgb + under.a*under.rgb*(1-over.a);
+	ret.a = over.a + under.a*(1. - over.a);
+	ret.rgb = over.a*over.rgb + under.a*under.rgb*(1.-over.a);
 	return ret;
 }
 
@@ -68,7 +70,7 @@ vec4 tile_color(ivec3 coords, ivec2 tile_data) {
 	bool isEdge = isUp ? any(equal(coords,ivec3(0))) : any(equal(coords,ivec3(hex_size*2-1)));
 	int max = isEdge ? 1 : 2;
 	if(tile_data.x == max) {
-		return vec4(0.8,0.3,0.15,mix(0.3,1,pulse_progress));
+		return vec4(0.8,0.3,0.15,mix(0.3,1.,pulse_progress));
 	}
 	return vec4(0);
 }
@@ -77,9 +79,9 @@ void main()
 {
 	vec3 min_bound = vec3(1);
 	vec3 max_bound = vec3(hex_size*2+1);
-	vec3 bound_edge = vec3(edge_thickness*2);
+	vec3 bound_edge = vec3(edge_thickness*2.);
 
-	vec3 coordinates = (gl_Color.rgb) * (hex_size+1) * 3;
+	vec3 coordinates = (gl_Color.rgb) * float((hex_size+1) * 3);
 	ivec3 coords = ivec3(floor(coordinates));
 	
 	if(all(greaterThan(coordinates,min_bound)) && all(lessThan(coordinates,max_bound))) {
@@ -87,14 +89,14 @@ void main()
 		vec3 distance = min(fract(coordinates),ceil(coordinates)-coordinates);
 		ivec3 current = coords - ivec3(1);
 		if(selected == current) {
-			float mix = smoothstep(0,edge_thickness/2,min3(distance));
-			gl_FragColor.rgb = edge_color * (1-mix) + mix*highlight_color;
-			gl_FragColor.a = 1-smoothstep(edge_thickness/2,edge_thickness*1.5,min3(distance))*0.3;
+			float mix = smoothstep(0.,edge_thickness/2.,min3(distance));
+			gl_FragColor.rgb = edge_color * (1.-mix) + mix*highlight_color;
+			gl_FragColor.a = 1.-smoothstep(edge_thickness/2.,edge_thickness*1.5,min3(distance))*0.3;
 		} else {
 			gl_FragColor.rgb = edge_color;
-			gl_FragColor.a = 1-smoothstep(edge_thickness*0.8,edge_thickness,min3(distance));
+			gl_FragColor.a = 1.-smoothstep(edge_thickness*0.8,edge_thickness,min3(distance));
 		}
-		ivec4 tile = ivec4(texelFetch(board,current.xy,0) * 255);
+		ivec4 tile = ivec4(texelFetch(board,current.xy,0) * 255.);
 		//grab the correct tile out
 		ivec2 t = tile.rg;
 		if(current.x + current.y + current.z == (hex_size*3 - 1)) {
@@ -106,7 +108,7 @@ void main()
 		//Outer edge
 		vec3 distance = max(min_bound - coordinates, coordinates - max_bound);
 		gl_FragColor.rgb = edge_color;
-		gl_FragColor.a = 1 - smoothstep(edge_thickness*1.5,edge_thickness*2,max3(distance));
+		gl_FragColor.a = 1. - smoothstep(edge_thickness*1.5,edge_thickness*2.,max3(distance));
 	} else {
 		gl_FragColor = vec4(0);
 	}

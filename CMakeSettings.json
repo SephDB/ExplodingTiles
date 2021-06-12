@@ -10,13 +10,12 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "variables": [],
       "enableClangTidyCodeAnalysis": true,
       "enableMicrosoftCodeAnalysis": true,
       "addressSanitizerEnabled": false
     },
     {
-      "name": "x86-Release",
+      "name": "x86-ReleaseDebug",
       "generator": "Ninja",
       "configurationType": "RelWithDebInfo",
       "buildRoot": "${projectDir}\\out\\build\\${name}",
@@ -25,7 +24,31 @@
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "msvc_x86" ],
-      "variables": []
+      "addressSanitizerEnabled": false
+    },
+    {
+      "name": "x86-Release",
+      "generator": "Ninja",
+      "configurationType": "Release",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "msvc_x86" ],
+      "variables": [
+        {
+          "name": "CMAKE_WIN32_EXECUTABLE",
+          "value": "True",
+          "type": "BOOL"
+        },
+        {
+          "name": "X_VCPKG_APPLOCAL_DEPS_INSTALL",
+          "value": "True",
+          "type": "BOOL"
+        }
+      ],
+      "addressSanitizerEnabled": false
     }
   ]
 }

@@ -331,8 +331,7 @@ class GameState : public State {
 
 	sf::VertexArray reset_arrow;
 
-	sf::Transform show_current_player;
-	sf::Transform show_winner;
+	sf::Vector2f show_current_player;
 	std::vector<sf::CircleShape> players;
 
 	ScoreBar bar;
@@ -356,16 +355,13 @@ public:
 
 		visual_board.setPosition(center);
 
-		const float size = visual_board.getTriRadius();
-
 		sf::Transform rot = sf::Transform().rotate(-60);
 
 		sf::Vector2f extra_offset{ 0, radius*1.4f };
 
 		extra_offset = rot.transformPoint(extra_offset);
 
-		show_current_player = sf::Transform().translate(center - extra_offset).scale(sf::Vector2f(1 / size, 1 / size) * (radius / 8));
-		show_winner = sf::Transform().translate(center).scale(sf::Vector2f(1, 1) / size * radius);
+		show_current_player = center - extra_offset;
 
 		extra_offset = rot.transformPoint(extra_offset);
 
@@ -413,24 +409,30 @@ public:
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-
 		if (auto player = board.getWinner(); player) {
 			target.draw(visual_board, states);
-			{
-				auto s = states;
-				s.transform *= show_current_player;
-				target.draw(players[*player], s);
-			}
-			auto s = states;
-			s.transform *= show_winner;
-			target.draw(players[*player], s);
+			
+			auto current = players[*player];
+			current.setRadius(visual_board.getRadius() / 8);
+			current.setOrigin(current.getRadius(), current.getRadius());
+			current.setPosition(show_current_player);
+			target.draw(current, states);
+			
+			//Show winner
+			current.setRadius(visual_board.getRadius());
+			current.setOrigin(current.getRadius(), current.getRadius());
+			current.setPosition(visual_board.getPosition());
+			current.setOutlineThickness(current.getRadius() / 20);
+			target.draw(current, states);
 		}
 		else {
 			const float explosion_progress = explode_timer.getElapsedTime().asSeconds() / explosion_length;
 			draw_board(target, states, visual_board, board.getBoard(), players, explosion_progress);
-			auto s = states;
-			s.transform *= show_current_player;
-			target.draw(players[board.getCurrentPlayerNum()], s);
+			
+			auto current = players[board.getCurrentPlayerNum()];
+			current.setRadius(visual_board.getRadius() / 8);
+			current.setPosition(show_current_player);
+			target.draw(current, states);
 		}
 
 		target.draw(reset_arrow, states);
@@ -853,6 +855,8 @@ class PlayerSelect : public State {
 	VisualBoard board;
 	sf::CircleShape increase_board, decrease_board;
 	
+	static constexpr size_t max_players = 5;
+
 	sf::Vector2f player_select_size() const {
 		return { dims.x / 6,dims.x / 4 };
 	}
@@ -921,7 +925,7 @@ public:
 			std::copy(players.begin(), players.end(), std::back_inserter(ret.players));
 			ret.board_size = board.board_size;
 			return ret;
-		} else if (add_player.getBounds().contains(mouse)) {
+		} else if (players.size() < max_players && add_player.getBounds().contains(mouse)) {
 			nextPlayer();
 		}
 		else if (increase_board.getGlobalBounds().contains(mouse)) {
@@ -949,7 +953,8 @@ public:
 	}
 
 	void draw(sf::RenderTarget& target, sf::RenderStates states) const override {
-		target.draw(add_player,states);
+		if(players.size() < max_players) 
+			target.draw(add_player,states);
 		target.draw(play_button,states);
 		target.draw(board, states);
 		target.draw(decrease_board, states);
@@ -1159,7 +1164,7 @@ int main()
 	settings.minorVersion = 2;
 	settings.sRgbCapable = true;
 
-	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Default, settings);
+	sf::RenderWindow window(sf::VideoMode(800, 600), "Exploding Tiles", sf::Style::Titlebar | sf::Style::Close, settings);
 
 	sf::Shader s;
 	{
